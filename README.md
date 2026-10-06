@@ -1,4 +1,4 @@
-# CareQuanta
+# Medic
 
 Provisional working name for an Individual Assignment 1 coursework project: a **local** clinic operations and finance application for a small private diagnostic clinic.
 

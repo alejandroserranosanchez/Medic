@@ -13,9 +13,11 @@ This repository is in the **planning / documentation** stage.
 
 What exists so far:
 
-- `PROJECT_BRIEF.md` — problem, users, domains, exclusions, approval status
+- `PROJECT_BRIEF.md` — problem, users, domains, exclusions, approval status, backlog, proposed architecture
+- `ACCEPTANCE_CRITERIA.md` — capacity, payment, and investment cases with inputs/expected outcomes
 - `ADR.md` — Architecture Decision Records (ADR-1 only so far)
 - `AI_USAGE.md` — AI interaction log (student own-words column must be completed by Alejandro)
+- `.gitignore` — venv, caches, local SQLite/`data/`, secrets
 
 ## Planned product (after approval)
 

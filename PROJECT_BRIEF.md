@@ -80,3 +80,61 @@ python app.py
 | Use-case proposal drafted for professor | Yes (see plan section 11 text; send personally) |
 | Professor preapproval recorded by Alejandro | **Pending** |
 | Application / schema / tests started | **No** — documentation-only path while pending |
+
+---
+
+## Day-by-day backlog (planned real work; not pre-generated commits)
+
+Dates use Europe/Madrid. Adjust if needed; never fabricate completed work.
+
+| Date | Checkpoint focus |
+|---|---|
+| Tue 6 Oct | Product brief + process docs; acceptance specification (tonight — docs only while approval pending) |
+| Wed 7 Oct | Confirm approval; Flask foundation, schema, persisted operations forms; booking conflict/cancellation + tests |
+| Thu 8 Oct | Replacement candidates and saved proposals; transactional accept/complete + receivable + edge tests |
+| Fri 9 Oct | Payments persistence and reconciliation statuses; payment screen + duplicate/partial/overpaid tests |
+| Sat 10 Oct | Keep/buy/lease calculations and saved assumptions; scenario UI + bottleneck/financial tests |
+| Sun 11 Oct | Demo flow, measured coverage, startup checks; README, diagrams, 4–5 page report, comprehension review |
+| Mon 12 Oct | Submission buffer and genuine final corrections only |
+
+Target cadence: two substantive commits per development day, pushed the same day, keeping any single day under 40% of total commits.
+
+---
+
+## Data and architecture proposal (not decided/implemented yet)
+
+The following separates **proposal** from **decided**. Do not create these tables in code while approval is pending.
+
+### Decided already
+
+- Backend: Python + Flask + Jinja + stdlib `sqlite3` (ADR-1).
+- One SQLite file for both domains; planned path `DATA_DIR/clinic.sqlite3`.
+- Documentation-only progress until professor approval is recorded by Alejandro.
+
+### Proposed module shape (introduce only as needed after approval)
+
+- `app.py` — environment-driven launch
+- `clinic/` — factory, `db.py`, `schema.sql`, `application.py`, `seed.py`
+- `clinic/operations/` — routes, service, repository
+- `clinic/finance/` — routes, reconciliation, investment, repository
+- `clinic/templates/` + `clinic/static/`
+- `tests/` — operations, reconciliation, investment, persistence/startup
+- Root: `requirements.txt`, `README.md`, `ADR.md`, `AI_USAGE.md`, this brief, `ACCEPTANCE_CRITERIA.md`
+
+### Proposed tables (refine at schema milestone; future ADR-3)
+
+| Table | Ownership | Main idea |
+|---|---|---|
+| `procedure_types` | Operations | Unique code, duration/turnover |
+| `sessions` | Operations | Room, clinician, date, start/end; reject shared-resource overlap |
+| `requests` | Operations | Fictional reference, priority, readiness, availability, minimum notice |
+| `bookings` | Operations | Request + session, interval, status; one active booking per request |
+| `recovery_proposals` | Operations | Cancelled booking, candidate, slot, reasons, status; no effect until accepted |
+| `fee_assumptions` | Finance | Procedure expected fee and variable cost (current assumptions) |
+| `receivables` | Finance | Unique `source_booking_id`, fee snapshot, dates |
+| `payments` | Finance | Receivable FK, unique payment reference, positive cents, paid date |
+| `investment_scenarios` | Finance | Name, model version, input/output snapshots |
+
+Proposed money rule: integer euro cents; `Decimal` for user input. Enable SQLite foreign keys for internal relationships. Prefer parameterised SQL and explicit transactions. Restrict deletion of completed activity or receivables with payments.
+
+Boundary proposal: `source_booking_id` as a stable reference across domains (or a deliberate FK if chosen later). Document the trade-off in ADR-3 when the schema is selected.

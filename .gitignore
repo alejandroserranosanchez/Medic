@@ -1,0 +1,38 @@
+# Python / Flask coursework .gitignore
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Python caches and build artefacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Local application data and secrets
+data/
+*.sqlite3
+*.sqlite
+.env
+.env.*
+!.env.example
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~

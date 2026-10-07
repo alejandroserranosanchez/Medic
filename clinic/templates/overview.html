@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <h1>Overview</h1>
+  <p class="note">Unfinished product shell. Capacity works for sessions, requests, bookings and cancel. Payments and investment come next.</p>
+  <ul class="stats">
+    <li><strong>{{ counts.sessions }}</strong> sessions</li>
+    <li><strong>{{ counts.bookings_active }}</strong> active bookings</li>
+    <li><strong>{{ counts.requests }}</strong> waiting requests</li>
+  </ul>
+  <p><a class="button" href="{{ url_for('operations.capacity') }}">Open capacity</a></p>
+</section>
+{% endblock %}

@@ -1,51 +1,64 @@
 # Medic
 
-Provisional working name for an Individual Assignment 1 coursework project: a **local** clinic operations and finance application for a small private diagnostic clinic.
+Local coursework app for a small private diagnostic clinic: capacity recovery, payment reconciliation, and a simple equipment investment comparison. Working brand may still change; override with `APP_NAME` if needed.
 
-## Current status (2026-10-06)
+## Current status (2026-10-07)
 
-This repository is in the **planning / documentation** stage.
+Professor use-case approval: **confirmed by student**.
 
-- Professor use-case approval: **pending** (not recorded yet).
-- The application is **not** implemented and **does not** run yet.
-- There is no installable dependency lock for an app runtime until foundation work begins after approval.
-- Do not expect `python app.py` to work today.
+Runnable foundation is in place:
 
-What exists so far:
+- Flask app starts with `python app.py`
+- SQLite file at `DATA_DIR/clinic.sqlite3` (default `./data/clinic.sqlite3`)
+- Overview + Capacity screens (sessions, requests, bookings, cancel)
+- Unit tests for persistence and core conflict/cancel rules
+- Payments and investment UI/logic: **not built yet**
 
-- `PROJECT_BRIEF.md` — problem, users, domains, exclusions, approval status, backlog, proposed architecture
-- `ACCEPTANCE_CRITERIA.md` — capacity, payment, and investment cases with inputs/expected outcomes
-- `ADR.md` — Architecture Decision Records (ADR-1 only so far)
-- `AI_USAGE.md` — AI interaction log (student own-words column must be completed by Alejandro)
-- `.gitignore` — venv, caches, local SQLite/`data/`, secrets
-
-## Planned product (after approval)
-
-Three product areas on one Flask process and one SQLite database:
-
-1. **Capacity** — sessions, bookings, cancellation, explainable replacement proposals
-2. **Payments** — expected fees, payments, reconciliation status labels
-3. **Investment** — keep / buy / lease scenario comparison with saved assumptions
-
-Two backend domains: **clinic operations** and **clinic finance**, coupled only through an explicit application service at the completion/receivable boundary.
-
-## Planned run contract (not active yet)
-
-Once the foundation exists, the intended local start path will be:
+## Setup and run
 
 ```bash
+python3 -m venv .venv
+source .venv/bin/activate
 python -m pip install -r requirements.txt
 python app.py
 ```
 
-Environment defaults (planned): `PORT=8000`, `DATA_DIR=./data`, database file `DATA_DIR/clinic.sqlite3`.
+Open `http://127.0.0.1:8000` (server binds `0.0.0.0`).
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `PORT` | `8000` | HTTP port |
+| `DATA_DIR` | `./data` | Directory for SQLite |
+| `APP_NAME` | `Medic` | Visible product name |
+| `SECRET_KEY` | `medic-dev-only` | Flask flash sessions (change if needed) |
+
+Database path: `DATA_DIR/clinic.sqlite3`. Schema is created automatically; fictional seed data is inserted only when the database has no procedure types yet. Restart does not wipe your data.
 
 ## Testing
 
-No test suite yet. Coverage commands and measured results will be recorded here only after tests exist and are run.
+```bash
+python -m pytest
+```
+
+Core operations coverage check (run after more finance tests exist; threshold is assignment minimum):
+
+```bash
+python -m pytest --cov=clinic.operations --cov=clinic.finance --cov-report=term-missing
+```
+
+Measured on 2026-10-07 after foundation work: `11 passed` with `python -m pytest`. Full ≥70% coverage claim for both domains waits until finance logic exists.
+
+## Layout (short)
+
+- `app.py` — start command
+- `clinic/` — app factory, DB, schema, seed
+- `clinic/operations/` — capacity rules + routes
+- `clinic/finance/` — package reserved for money domain
+- `clinic/application.py` — future ops↔finance orchestration
+- `tests/` — persistence + conflict/cancel tests
+- `ADR.md`, `AI_USAGE.md`, `PROJECT_BRIEF.md`, `ACCEPTANCE_CRITERIA.md`
 
 ## Assignment notes
 
-- Single process, single SQLite file, one root dependency manifest.
-- No Docker/CI/IaC authored in this assignment.
-- Commit history and process docs (`ADR.md`, `AI_USAGE.md`) are part of the graded evidence.
+- Single process, one SQLite file, one root `requirements.txt`
+- No Docker / CI / IaC in this assignment

@@ -30,6 +30,10 @@ data/
 .env.*
 !.env.example
 
+# Local zip exports / review packs (not source of truth)
+Archivo.zip
+*.zip
+
 # Editor / OS
 .DS_Store
 .idea/

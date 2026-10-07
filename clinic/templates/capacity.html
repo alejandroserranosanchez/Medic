@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <h1>Capacity</h1>
+  <p class="note">Staffed sessions, waiting requests and bookings. Cancel frees the slot; it does not create a payment receivable.</p>
+</section>
+
+<section class="panel">
+  <h2>Sessions</h2>
+  <table>
+    <thead>
+      <tr><th>ID</th><th>Date</th><th>Room</th><th>Clinician</th><th>Start</th><th>End</th></tr>
+    </thead>
+    <tbody>
+      {% for s in sessions %}
+      <tr>
+        <td>{{ s.id }}</td>
+        <td>{{ s.session_date }}</td>
+        <td>{{ s.room_label }}</td>
+        <td>{{ s.clinician_label }}</td>
+        <td>{{ s.start_time }}</td>
+        <td>{{ s.end_time }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6">No sessions yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <form method="post" action="{{ url_for('operations.add_session') }}" class="form-grid">
+    <h3>Add session</h3>
+    <label>Room <input name="room_label" required value="Room B"></label>
+    <label>Clinician <input name="clinician_label" required value="Dr. Nadal"></label>
+    <label>Date <input name="session_date" type="date" required value="2026-10-10"></label>
+    <label>Start <input name="start_time" required placeholder="HH:MM" value="09:00"></label>
+    <label>End <input name="end_time" required placeholder="HH:MM" value="12:00"></label>
+    <button type="submit">Save session</button>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>Waiting requests</h2>
+  <table>
+    <thead>
+      <tr><th>ID</th><th>Patient ref</th><th>Procedure</th><th>Priority</th><th>Ready</th></tr>
+    </thead>
+    <tbody>
+      {% for r in requests %}
+      <tr>
+        <td>{{ r.id }}</td>
+        <td>{{ r.patient_ref }}</td>
+        <td>{{ r.procedure_code }}</td>
+        <td>{{ r.priority }}</td>
+        <td>{{ "yes" if r.ready else "no" }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5">No requests yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <form method="post" action="{{ url_for('operations.add_request') }}" class="form-grid">
+    <h3>Add request</h3>
+    <label>Patient ref <input name="patient_ref" required value="P-2002"></label>
+    <label>Procedure
+      <select name="procedure_code" required>
+        {% for p in procedures %}
+        <option value="{{ p.code }}">{{ p.display_name }} ({{ p.duration_minutes }}+{{ p.turnover_minutes }}m)</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Priority <input name="priority" type="number" required value="1"></label>
+    <label>Requested at <input name="requested_at" required value="2026-10-09T10:00:00"></label>
+    <label>Available from <input name="available_from" required value="2026-10-10T09:00:00"></label>
+    <label>Available to <input name="available_to" required value="2026-10-10T18:00:00"></label>
+    <label>Min notice (min) <input name="minimum_notice_minutes" type="number" required value="30"></label>
+    <label class="check"><input name="ready" type="checkbox" checked> Ready</label>
+    <button type="submit">Save request</button>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>Bookings</h2>
+  <table>
+    <thead>
+      <tr><th>ID</th><th>Patient</th><th>Proc</th><th>Session</th><th>Slot</th><th>Status</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for b in bookings %}
+      <tr>
+        <td>{{ b.id }}</td>
+        <td>{{ b.patient_ref }}</td>
+        <td>{{ b.procedure_code }}</td>
+        <td>#{{ b.session_id }} {{ b.room_label }} / {{ b.clinician_label }} ({{ b.session_date }})</td>
+        <td>{{ b.start_time }}–{{ b.end_time }} (+{{ b.turnover_minutes }}m turnover)</td>
+        <td><span class="status {{ b.status }}">{{ b.status }}</span></td>
+        <td>
+          {% if b.status == 'active' %}
+          <form method="post" action="{{ url_for('operations.cancel_booking', booking_id=b.id) }}">
+            <button type="submit" class="danger">Cancel</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7">No bookings yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <form method="post" action="{{ url_for('operations.add_booking') }}" class="form-grid">
+    <h3>Add booking</h3>
+    <label>Request ID <input name="request_id" type="number" required></label>
+    <label>Session ID <input name="session_id" type="number" required></label>
+    <label>Start <input name="start_time" required placeholder="HH:MM" value="10:00"></label>
+    <label>End <input name="end_time" required placeholder="HH:MM" value="10:30"></label>
+    <button type="submit">Book</button>
+  </form>
+</section>
+{% endblock %}

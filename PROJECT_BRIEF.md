@@ -1,9 +1,9 @@
 # CareQuanta — Project Brief
 
-**Working name:** CareQuanta (provisional; final brand not selected)  
-**Date:** 2026-10-06  
-**Delivery target:** 2026-10-12 (course deadline corrected by student; confirm submission hour in the portal)  
-**Professor approval:** **Pending** — do not treat silence as approval. Application code waits until Alejandro records explicit confirmation.
+**Working name:** Medic (earlier provisional name: CareQuanta)  
+**Date:** 2026-10-06 (updated 2026-10-07)  
+**Delivery target:** 2026-10-12 (confirm submission hour in the portal)  
+**Professor approval:** **Confirmed by Alejandro on 2026-10-07** — implementation may proceed.
 
 ## User problem
 
@@ -77,9 +77,9 @@ python app.py
 
 | Item | Status |
 |---|---|
-| Use-case proposal drafted for professor | Yes (see plan section 11 text; send personally) |
-| Professor preapproval recorded by Alejandro | **Pending** |
-| Application / schema / tests started | **No** — documentation-only path while pending |
+| Use-case proposal drafted for professor | Yes |
+| Professor preapproval recorded by Alejandro | **Yes (2026-10-07)** |
+| Application / schema / tests started | **Yes** — foundation + capacity conflict/cancel (2026-10-07) |
 
 ---
 

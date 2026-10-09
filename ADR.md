@@ -28,3 +28,14 @@ Context: Both domains must persist in one SQLite file. Completing a booking will
 Decision: Use the tables in `clinic/schema.sql`. Money is integer euro cents. Internal operations FKs are normal SQLite foreign keys. Receivables store `source_booking_id` as a unique reference validated by the application service rather than a cross-domain FK, so the finance row remains meaningful if operations were extracted later.
 Alternatives considered: A direct `FOREIGN KEY (source_booking_id) REFERENCES bookings(id)` is simpler today but was rejected for ADR clarity: it would couple finance storage to the operations table in a way that fights the planned service split. JSON-only persistence was rejected because relational booking/payment queries are core to the product.
 Consequences: The app must enforce the one-receivable-per-completed-booking rule in code/transactions. Diagrams and tests must treat `source_booking_id` as the documented boundary field.
+
+Note (2026-10-09): Schema grew with `clinicians`, `clinician_procedure_profiles`, and booking timing snapshots (`planning_block_minutes`, `room_turnover_minutes`, …). Catalogue FK from `fee_assumptions.procedure_code` remains a known monolith dependency (not full storage independence). Idempotent migration lives in `clinic/db.py`.
+
+## [4]. Testing focuses on business rules, not Flask routes
+
+Date: 2026-10-09
+Status: Decided
+Context: The assignment requires ≥70% coverage on core business logic for both domains. Route tests alone would inflate coverage without proving scheduling or money rules.
+Decision: Prefer pytest on pure functions (`compute_timing_plan`, `eligibility_issues`, `classify_balance`) and repository/application flows with temporary SQLite. Measure `clinic.operations`, `clinic.finance`, `clinic.application`, and `clinic.timeutil`. Keep HTTP checks thin.
+Alternatives considered: Maximising coverage via route-only tests was rejected because it hides defects like ignored duration and missing eligibility. A separate end-to-end browser suite was rejected as too heavy for this deadline.
+Consequences: We must keep decision logic out of templates. Finance and Operations each need enough rule tests that one domain cannot hide the other’s thin coverage.

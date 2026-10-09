@@ -1,16 +1,38 @@
 PRAGMA foreign_keys = ON;
 
--- Domain A: clinic operations
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    id TEXT PRIMARY KEY,
+    applied_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS procedure_types (
     code TEXT PRIMARY KEY,
     display_name TEXT NOT NULL,
     duration_minutes INTEGER NOT NULL CHECK (duration_minutes > 0),
-    turnover_minutes INTEGER NOT NULL CHECK (turnover_minutes >= 0)
+    turnover_minutes INTEGER NOT NULL CHECK (turnover_minutes >= 0),
+    min_planning_minutes INTEGER NOT NULL CHECK (min_planning_minutes > 0)
+);
+
+CREATE TABLE IF NOT EXISTS clinicians (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    display_name TEXT NOT NULL UNIQUE
+);
+
+CREATE TABLE IF NOT EXISTS clinician_procedure_profiles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    clinician_id INTEGER NOT NULL REFERENCES clinicians(id),
+    procedure_code TEXT NOT NULL REFERENCES procedure_types(code),
+    estimated_duration_minutes INTEGER NOT NULL CHECK (estimated_duration_minutes > 0),
+    variability_minutes INTEGER NOT NULL CHECK (variability_minutes >= 0),
+    estimate_origin TEXT NOT NULL,
+    reviewed_on TEXT NOT NULL,
+    UNIQUE (clinician_id, procedure_code)
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     room_label TEXT NOT NULL,
+    clinician_id INTEGER REFERENCES clinicians(id),
     clinician_label TEXT NOT NULL,
     session_date TEXT NOT NULL,
     start_time TEXT NOT NULL,
@@ -37,6 +59,13 @@ CREATE TABLE IF NOT EXISTS bookings (
     start_time TEXT NOT NULL,
     end_time TEXT NOT NULL,
     status TEXT NOT NULL CHECK (status IN ('active', 'cancelled', 'completed')),
+    profile_id INTEGER REFERENCES clinician_procedure_profiles(id),
+    timing_source TEXT NOT NULL DEFAULT 'catalogue',
+    estimated_duration_minutes INTEGER NOT NULL DEFAULT 0,
+    variability_minutes INTEGER NOT NULL DEFAULT 0,
+    min_planning_minutes INTEGER NOT NULL DEFAULT 0,
+    planning_block_minutes INTEGER NOT NULL DEFAULT 0,
+    room_turnover_minutes INTEGER NOT NULL DEFAULT 0,
     CHECK (start_time < end_time)
 );
 
@@ -55,7 +84,6 @@ CREATE TABLE IF NOT EXISTS recovery_proposals (
     created_at TEXT NOT NULL
 );
 
--- Domain B: clinic finance (tables exist; money logic comes in later days)
 CREATE TABLE IF NOT EXISTS fee_assumptions (
     procedure_code TEXT PRIMARY KEY REFERENCES procedure_types(code),
     expected_fee_cents INTEGER NOT NULL CHECK (expected_fee_cents >= 0),

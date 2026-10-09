@@ -21,6 +21,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         PORT=int(os.environ.get("PORT", "8000")),
         DATA_DIR=os.environ.get("DATA_DIR", str(default_data)),
         DB_FILENAME="clinic.sqlite3",
+        DEMO_NOW=os.environ.get("DEMO_NOW"),  # optional ISO local datetime for demos/tests
     )
 
     if test_config:
@@ -36,8 +37,10 @@ def create_app(test_config: dict | None = None) -> Flask:
         seed_if_empty()
 
     from clinic.operations.routes import bp as operations_bp
+    from clinic.finance.routes import bp as finance_bp
 
     app.register_blueprint(operations_bp)
+    app.register_blueprint(finance_bp)
 
     @app.route("/")
     def overview():
@@ -46,12 +49,14 @@ def create_app(test_config: dict | None = None) -> Flask:
         from clinic.db import get_db
 
         db = get_db()
+        from clinic.operations import repository as ops_repo
+
         counts = {
             "sessions": db.execute("SELECT COUNT(*) AS n FROM sessions").fetchone()["n"],
             "bookings_active": db.execute(
                 "SELECT COUNT(*) AS n FROM bookings WHERE status = 'active'"
             ).fetchone()["n"],
-            "requests": db.execute("SELECT COUNT(*) AS n FROM requests").fetchone()["n"],
+            "waiting_requests": ops_repo.count_waiting_requests(db),
         }
         return render_template("overview.html", counts=counts)
 

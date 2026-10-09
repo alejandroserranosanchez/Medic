@@ -2,11 +2,11 @@
 {% block content %}
 <section class="panel">
   <h1>Overview</h1>
-  <p class="note">Unfinished product shell. Capacity works for sessions, requests, bookings and cancel. Payments and investment come next.</p>
+  <p class="note">Capacity calculates booking length from clinician/procedure profiles. Payments and investment come next. All data is fictional.</p>
   <ul class="stats">
     <li><strong>{{ counts.sessions }}</strong> sessions</li>
     <li><strong>{{ counts.bookings_active }}</strong> active bookings</li>
-    <li><strong>{{ counts.requests }}</strong> waiting requests</li>
+    <li><strong>{{ counts.waiting_requests }}</strong> waiting requests (no active/completed booking)</li>
   </ul>
   <p><a class="button" href="{{ url_for('operations.capacity') }}">Open capacity</a></p>
 </section>

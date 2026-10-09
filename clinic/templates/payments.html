@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <h1>Payments</h1>
+  <p class="note">
+    Completing a booking creates <strong>one</strong> receivable with the fee frozen at that moment.
+    Later catalogue fee edits do not rewrite history. Statuses are calculated from SQLite, not hardcoded in HTML.
+    As-of date for overdue: {{ as_of_date }}.
+  </p>
+</section>
+
+<section class="panel">
+  <h2>Complete a booking → create receivable</h2>
+  <form method="post" action="{{ url_for('finance.complete') }}" class="form-grid">
+    <label>Booking ID <input name="booking_id" type="number" required></label>
+    <label>Performed date <input name="performed_date" type="date" required value="2026-10-09"></label>
+    <label>Due date <input name="due_date" type="date" required value="2026-10-23"></label>
+    <button type="submit">Complete &amp; create receivable</button>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>Receivables</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th><th>Booking</th><th>Proc</th><th>Expected</th><th>Paid</th><th>Balance</th><th>Status</th><th>Overdue</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in receivables %}
+      <tr>
+        <td>{{ r.id }}</td>
+        <td>{{ r.source_booking_id }}</td>
+        <td>{{ r.procedure_code }}</td>
+        <td>{{ '%.2f'|format(r.expected_fee_cents / 100) }} €</td>
+        <td>{{ '%.2f'|format(r.balance.paid_cents / 100) }} €</td>
+        <td>{{ '%.2f'|format(r.balance.balance_cents / 100) }} €</td>
+        <td><span class="status">{{ r.balance.status }}</span></td>
+        <td>{{ "yes" if r.balance.overdue else "no" }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8">No receivables yet. Complete an active booking first.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="panel">
+  <h2>Record a payment</h2>
+  <form method="post" action="{{ url_for('finance.record_payment') }}" class="form-grid">
+    <label>Receivable ID <input name="receivable_id" type="number" required></label>
+    <label>Payment reference <input name="payment_reference" required value="P1"></label>
+    <label>Amount (EUR) <input name="amount_eur" required value="90.00"></label>
+    <label>Paid date <input name="paid_date" type="date" required value="2026-10-09"></label>
+    <button type="submit">Save payment</button>
+  </form>
+  <p class="note">Example: expected 120.00 → pay 90.00 (partial) → pay 30.00 (settled). Repeating the same reference does not double-count.</p>
+</section>
+{% endblock %}

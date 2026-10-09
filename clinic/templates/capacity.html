@@ -2,7 +2,17 @@
 {% block content %}
 <section class="panel">
   <h1>Capacity</h1>
-  <p class="note">Staffed sessions, waiting requests and bookings. Cancel frees the slot; it does not create a payment receivable.</p>
+  <p class="note">
+    End time is calculated on the server:
+    <code>block = max(centre minimum, estimate + variability)</code>,
+    then room turnover is added for occupation.
+    <strong>ready</strong> means a professional confirmed scheduling fitness for the proposed window — not automated medical clearance.
+  </p>
+  {% if demo_now %}
+  <p class="note"><strong>Demo clock:</strong> {{ demo_now }} (planning uses this instead of the real clock).</p>
+  {% else %}
+  <p class="note">Planning clock now: {{ clock_now }}</p>
+  {% endif %}
 </section>
 
 <section class="panel">
@@ -30,7 +40,13 @@
   <form method="post" action="{{ url_for('operations.add_session') }}" class="form-grid">
     <h3>Add session</h3>
     <label>Room <input name="room_label" required value="Room B"></label>
-    <label>Clinician <input name="clinician_label" required value="Dr. Nadal"></label>
+    <label>Clinician
+      <select name="clinician_id" required>
+        {% for c in clinicians %}
+        <option value="{{ c.id }}">{{ c.display_name }}</option>
+        {% endfor %}
+      </select>
+    </label>
     <label>Date <input name="session_date" type="date" required value="2026-10-10"></label>
     <label>Start <input name="start_time" required placeholder="HH:MM" value="09:00"></label>
     <label>End <input name="end_time" required placeholder="HH:MM" value="12:00"></label>
@@ -42,7 +58,7 @@
   <h2>Waiting requests</h2>
   <table>
     <thead>
-      <tr><th>ID</th><th>Patient ref</th><th>Procedure</th><th>Priority</th><th>Ready</th></tr>
+      <tr><th>ID</th><th>Patient ref</th><th>Procedure</th><th>Priority</th><th>Ready</th><th>Availability</th></tr>
     </thead>
     <tbody>
       {% for r in requests %}
@@ -52,9 +68,10 @@
         <td>{{ r.procedure_code }}</td>
         <td>{{ r.priority }}</td>
         <td>{{ "yes" if r.ready else "no" }}</td>
+        <td>{{ r.available_from }} → {{ r.available_to }} (notice {{ r.minimum_notice_minutes }}m)</td>
       </tr>
       {% else %}
-      <tr><td colspan="5">No requests yet.</td></tr>
+      <tr><td colspan="6">No requests yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -65,16 +82,16 @@
     <label>Procedure
       <select name="procedure_code" required>
         {% for p in procedures %}
-        <option value="{{ p.code }}">{{ p.display_name }} ({{ p.duration_minutes }}+{{ p.turnover_minutes }}m)</option>
+        <option value="{{ p.code }}">{{ p.display_name }} (catalogue {{ p.duration_minutes }}m, room +{{ p.turnover_minutes }}m, min {{ p.min_planning_minutes }}m)</option>
         {% endfor %}
       </select>
     </label>
-    <label>Priority <input name="priority" type="number" required value="1"></label>
+    <label>Priority <input name="priority" type="number" min="0" max="10" required value="1"></label>
     <label>Requested at <input name="requested_at" required value="2026-10-09T10:00:00"></label>
     <label>Available from <input name="available_from" required value="2026-10-10T09:00:00"></label>
     <label>Available to <input name="available_to" required value="2026-10-10T18:00:00"></label>
-    <label>Min notice (min) <input name="minimum_notice_minutes" type="number" required value="30"></label>
-    <label class="check"><input name="ready" type="checkbox" checked> Ready</label>
+    <label>Min notice (min) <input name="minimum_notice_minutes" type="number" min="0" required value="30"></label>
+    <label class="check"><input name="ready" type="checkbox"> Ready (human scheduling confirmation)</label>
     <button type="submit">Save request</button>
   </form>
 </section>
@@ -83,7 +100,7 @@
   <h2>Bookings</h2>
   <table>
     <thead>
-      <tr><th>ID</th><th>Patient</th><th>Proc</th><th>Session</th><th>Slot</th><th>Status</th><th></th></tr>
+      <tr><th>ID</th><th>Patient</th><th>Proc</th><th>Session</th><th>Plan</th><th>Status</th><th></th></tr>
     </thead>
     <tbody>
       {% for b in bookings %}
@@ -92,12 +109,22 @@
         <td>{{ b.patient_ref }}</td>
         <td>{{ b.procedure_code }}</td>
         <td>#{{ b.session_id }} {{ b.room_label }} / {{ b.clinician_label }} ({{ b.session_date }})</td>
-        <td>{{ b.start_time }}–{{ b.end_time }} (+{{ b.turnover_minutes }}m turnover)</td>
+        <td>
+          {{ b.start_time }}–{{ b.end_time }}
+          (block {{ b.planning_block_minutes }}m =
+          max({{ b.min_planning_minutes }}, {{ b.estimated_duration_minutes }}+{{ b.variability_minutes }});
+          room +{{ b.room_turnover_minutes }}m; source {{ b.timing_source }})
+        </td>
         <td><span class="status {{ b.status }}">{{ b.status }}</span></td>
         <td>
           {% if b.status == 'active' %}
-          <form method="post" action="{{ url_for('operations.cancel_booking', booking_id=b.id) }}">
+          <form method="post" action="{{ url_for('operations.cancel_booking', booking_id=b.id) }}" style="display:inline">
             <button type="submit" class="danger">Cancel</button>
+          </form>
+          <form method="post" action="{{ url_for('finance.complete', booking_id=b.id) }}" style="display:inline">
+            <input type="hidden" name="performed_date" value="2026-10-09">
+            <input type="hidden" name="due_date" value="2026-10-23">
+            <button type="submit">Complete</button>
           </form>
           {% endif %}
         </td>
@@ -110,10 +137,10 @@
 
   <form method="post" action="{{ url_for('operations.add_booking') }}" class="form-grid">
     <h3>Add booking</h3>
+    <p class="note" style="grid-column: 1 / -1;">Enter start only. The server calculates end from the session clinician’s profile (or catalogue).</p>
     <label>Request ID <input name="request_id" type="number" required></label>
     <label>Session ID <input name="session_id" type="number" required></label>
     <label>Start <input name="start_time" required placeholder="HH:MM" value="10:00"></label>
-    <label>End <input name="end_time" required placeholder="HH:MM" value="10:30"></label>
     <button type="submit">Book</button>
   </form>
 </section>

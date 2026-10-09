@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from flask import Blueprint, flash, redirect, render_template, request, url_for
+from flask import Blueprint, current_app, flash, redirect, render_template, request, url_for
 
+from clinic.clock import now as clock_now
 from clinic.db import get_db
 from clinic.operations import repository as ops_repo
 from clinic.operations.service import OperationsError
@@ -20,6 +21,9 @@ def capacity():
         bookings=ops_repo.list_bookings(db),
         requests=ops_repo.list_requests(db),
         procedures=ops_repo.list_procedure_types(db),
+        clinicians=ops_repo.list_clinicians(db),
+        demo_now=current_app.config.get("DEMO_NOW") or None,
+        clock_now=clock_now(),
     )
 
 
@@ -30,7 +34,7 @@ def add_session():
         ops_repo.create_session(
             db,
             room_label=request.form["room_label"],
-            clinician_label=request.form["clinician_label"],
+            clinician_id=int(request.form["clinician_id"]),
             session_date=request.form["session_date"],
             start_time=request.form["start_time"],
             end_time=request.form["end_time"],
@@ -66,14 +70,16 @@ def add_request():
 def add_booking():
     db = get_db()
     try:
-        ops_repo.create_booking(
+        booking_id = ops_repo.create_booking(
             db,
             request_id=int(request.form["request_id"]),
             session_id=int(request.form["session_id"]),
             start_time=request.form["start_time"],
-            end_time=request.form["end_time"],
         )
-        flash("Booking created.", "ok")
+        flash(
+            f"Booking #{booking_id} created. End time and room occupation were calculated on the server.",
+            "ok",
+        )
     except (OperationsError, KeyError, ValueError) as exc:
         flash(str(getattr(exc, "reason", exc)), "error")
     return redirect(url_for("operations.capacity"))

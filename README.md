@@ -2,17 +2,19 @@
 
 Local coursework app for a small private diagnostic clinic: capacity recovery, payment reconciliation, and a simple equipment investment comparison. Working brand may still change; override with `APP_NAME` if needed.
 
-## Current status (2026-10-07)
+## Current status (2026-10-09)
 
 Professor use-case approval: **confirmed by student**.
 
-Runnable foundation is in place:
+Working now:
 
-- Flask app starts with `python app.py`
-- SQLite file at `DATA_DIR/clinic.sqlite3` (default `./data/clinic.sqlite3`)
-- Overview + Capacity screens (sessions, requests, bookings, cancel)
-- Unit tests for persistence and core conflict/cancel rules
-- Payments and investment UI/logic: **not built yet**
+- Flask app: `python app.py` → Overview, Capacity, Payments
+- SQLite at `DATA_DIR/clinic.sqlite3` with clinicians/profiles and booking timing snapshots
+- Booking end time calculated on the server from clinician+procedure profile (or catalogue)
+- Complete booking → one receivable (fee snapshot); record payments; statuses unpaid/partial/settled/overpaid
+- Optional `DEMO_NOW=YYYY-MM-DDTHH:MM:SS` for a reproducible planning clock
+- Investment scenarios: **not built yet**
+- Slot-recovery proposals UI: **not built yet**
 
 ## Setup and run
 
@@ -46,7 +48,7 @@ Core operations coverage check (run after more finance tests exist; threshold is
 python -m pytest --cov=clinic.operations --cov=clinic.finance --cov-report=term-missing
 ```
 
-Measured on 2026-10-07 after foundation work: `11 passed` with `python -m pytest`. Full ≥70% coverage claim for both domains waits until finance logic exists.
+Measured on 2026-10-09: `26 passed` with `python -m pytest`. Combined coverage command above reported about **74%** on the measured modules in this environment — re-run and paste your own numbers before submission.
 
 ## Layout (short)
 

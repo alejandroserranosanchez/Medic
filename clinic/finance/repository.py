@@ -2,8 +2,15 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 
+from clinic.finance.investment import (
+    ScenarioInputs,
+    compare_scenario,
+    inputs_to_dict,
+    result_to_dict,
+)
 from clinic.finance.reconciliation import classify_balance
 
 
@@ -125,3 +132,64 @@ def record_payment(
     except Exception:
         db.execute("ROLLBACK")
         raise
+
+
+def save_investment_scenario(
+    db: sqlite3.Connection,
+    *,
+    inputs: ScenarioInputs,
+    created_at: str,
+) -> int:
+    """Compute, then persist input+output snapshots. Future fee edits cannot rewrite them."""
+    result = compare_scenario(inputs)
+    db.execute("BEGIN IMMEDIATE")
+    try:
+        cur = db.execute(
+            """
+            INSERT INTO investment_scenarios (
+                name, procedure_code, created_at, model_version,
+                input_snapshot_json, output_snapshot_json
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                inputs.name.strip(),
+                inputs.procedure_code.strip(),
+                created_at,
+                result.model_version,
+                json.dumps(inputs_to_dict(inputs), sort_keys=True),
+                json.dumps(result_to_dict(result), sort_keys=True),
+            ),
+        )
+        db.execute("COMMIT")
+        return int(cur.lastrowid)
+    except Exception:
+        db.execute("ROLLBACK")
+        raise
+
+
+def list_investment_scenarios(db: sqlite3.Connection) -> list[sqlite3.Row]:
+    return db.execute(
+        """
+        SELECT id, name, procedure_code, created_at, model_version
+        FROM investment_scenarios
+        ORDER BY id DESC
+        """
+    ).fetchall()
+
+
+def get_investment_scenario(db: sqlite3.Connection, scenario_id: int) -> dict:
+    row = db.execute(
+        "SELECT * FROM investment_scenarios WHERE id = ?",
+        (scenario_id,),
+    ).fetchone()
+    if row is None:
+        raise FinanceError("scenario not found")
+    return {
+        "id": row["id"],
+        "name": row["name"],
+        "procedure_code": row["procedure_code"],
+        "created_at": row["created_at"],
+        "model_version": row["model_version"],
+        "inputs": json.loads(row["input_snapshot_json"]),
+        "outputs": json.loads(row["output_snapshot_json"]),
+    }

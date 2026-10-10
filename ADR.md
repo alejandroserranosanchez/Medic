@@ -39,3 +39,12 @@ Context: The assignment requires ≥70% coverage on core business logic for both
 Decision: Prefer pytest on pure functions (`compute_timing_plan`, `eligibility_issues`, `classify_balance`) and repository/application flows with temporary SQLite. Measure `clinic.operations`, `clinic.finance`, `clinic.application`, and `clinic.timeutil`. Keep HTTP checks thin.
 Alternatives considered: Maximising coverage via route-only tests was rejected because it hides defects like ignored duration and missing eligibility. A separate end-to-end browser suite was rejected as too heavy for this deadline.
 Consequences: We must keep decision logic out of templates. Finance and Operations each need enough rule tests that one domain cannot hide the other’s thin coverage.
+
+## [5]. Deliberate omission of live hospital/insurer integrations
+
+Date: 2026-10-10
+Status: Decided
+Context: Real clinics use hospital scheduling, insurer remittance files, and capital-planning tools. Connecting to them would add credentials, privacy risk, and deployment surface the assignment forbids for this phase.
+Decision: Keep Medic fully local with fictional data, deterministic rules, and saved investment scenarios that explain bottlenecks. Do not integrate EndoSoft-like schedulers, insurer remittances, payment processors, or public cloud APIs in Assignment 1.
+Alternatives considered: A read-only CSV import of “real-looking” clinic exports was rejected for this week because it adds validation/privacy work without helping the graded domains. Building a fake external HTTP stub was rejected as theatre that complicates the comprehension check.
+Consequences: The demo must show transparent local calculations instead of vendor integrations. After the course, discovery interviews and authorised imports are the next product step — not part of this repository’s scope.

@@ -8,11 +8,13 @@ Disclosure is grade-neutral. The last column must be completed or verified by Al
 | 2026-10-06 / `2f29bd9` | Cursor | Checkpoint 2A acceptance criteria. | Accepted | `ACCEPTANCE_CRITERIA.md`, backlog, `.gitignore`. | **TODO (Alejandro)** |
 | 2026-10-07 / `d035854` | Cursor | Flask/SQLite foundation after approval. | Accepted | App factory, schema/seed, Overview/Capacity shell, persistence test. | **TODO (Alejandro)** |
 | 2026-10-07 / `329d1a2` | Cursor | Capacity conflicts + ADR-2/3. | Accepted | Conflict/cancel rules and tests; domain/schema ADRs. | **TODO (Alejandro)** |
-| 2026-10-07 / (with capacity docs) | Cursor | Read review guide; reconcile Git; no profiles yet. | Accepted | Added `CURSOR_REVIEW_AND_BUILD_GUIDE.md` as reference. | **TODO (Alejandro)** |
-| 2026-10-09 / *(pending)* | Cursor | Friday 9: catch up Oct-8 P0 (profiles, derived duration, eligibility, IMMEDIATE txs) then Finance complete+payments; keep explainable. | Accepted | Profiles §6.5, booking snapshots, eligibility, validation, `BEGIN IMMEDIATE`; `complete_booking` + receivables/payments + ADR-4. 26 tests passed locally. | **TODO (Alejandro):** Explain `compute_timing_plan` and why `complete_booking` lives in `application.py`. |
+| 2026-10-07 | Cursor | Read review guide; reconcile Git. | Accepted | Added `CURSOR_REVIEW_AND_BUILD_GUIDE.md` as reference. | **TODO (Alejandro)** |
+| 2026-10-09 / `9f80cc1` | Cursor | Catch up P0: profiles, derived duration, eligibility, IMMEDIATE. | Accepted | Clinician profiles, booking snapshots, eligibility, validation. | **TODO (Alejandro):** Explain `compute_timing_plan`. |
+| 2026-10-09 / `561c5a3` | Cursor | Complete booking + payments. | Accepted | `complete_booking`, receivables, payment statuses, ADR-4. | **TODO (Alejandro):** Explain why completion lives in `application.py`. |
+| 2026-10-10 / *(pending)* | Cursor | Saturday: keep/buy/lease calc + save/reopen UI + ADR-5; keep explainable. | Accepted | `clinic/finance/investment.py`, Investment screen, snapshot persistence, guide-example tests (31 passed locally), ADR-5 no live integrations. | **TODO (Alejandro):** Explain `min(demand, staff, room, equipment)` and why buy can look worse than keep in the guide example. |
 
 Notes for Alejandro:
 
 - Fill every **TODO** before the pre-submission explanation day.
-- After you commit, paste real short hashes into the Date/commit column.
-- Defence phrases to practise: half-open intervals; profile vs catalogue; snapshot immutability; `BEGIN IMMEDIATE`; Operations vs Finance vs application service.
+- After you commit today’s work, paste the real short hash(es) into the pending row.
+- Defence phrases: half-open intervals; profile snapshots; `BEGIN IMMEDIATE`; application-service completion; investment bottlenecks vs “more equipment always wins”.

@@ -13,8 +13,8 @@ Working now:
 - Booking end time calculated on the server from clinician+procedure profile (or catalogue)
 - Complete booking → one receivable (fee snapshot); record payments; statuses unpaid/partial/settled/overpaid
 - Optional `DEMO_NOW=YYYY-MM-DDTHH:MM:SS` for a reproducible planning clock
-- Investment scenarios: **not built yet**
-- Slot-recovery proposals UI: **not built yet**
+- Investment keep/buy/lease comparison with save/reopen: **available**
+- Slot-recovery proposals UI: **not built yet** (optional polish if time remains)
 
 ## Setup and run
 
@@ -48,7 +48,7 @@ Core operations coverage check (run after more finance tests exist; threshold is
 python -m pytest --cov=clinic.operations --cov=clinic.finance --cov-report=term-missing
 ```
 
-Measured on 2026-10-09: `26 passed` with `python -m pytest`. Combined coverage command above reported about **74%** on the measured modules in this environment — re-run and paste your own numbers before submission.
+Measured on 2026-10-10: `31 passed` with `python -m pytest` after adding investment tests. Re-run coverage yourself before submission and paste the real numbers.
 
 ## Layout (short)
 

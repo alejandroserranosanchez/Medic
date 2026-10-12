@@ -100,7 +100,7 @@ def test_cancel_frees_capacity_for_new_booking(app):
     with app.app_context():
         db = get_db()
         bookings = ops_repo.list_bookings(db)
-        active = next(b for b in bookings if b["status"] == "active")
+        active = next(b for b in bookings if b["patient_ref"] == "P-1001")
         ops_repo.cancel_booking(db, active["id"])
 
         request_id = ops_repo.create_request(
@@ -130,7 +130,7 @@ def test_duplicate_active_booking_rejected(app):
     with app.app_context():
         db = get_db()
         bookings = ops_repo.list_bookings(db)
-        active = next(b for b in bookings if b["status"] == "active")
+        active = next(b for b in bookings if b["patient_ref"] == "P-1001")
         with pytest.raises(OperationsError, match="already_booked"):
             ops_repo.create_booking(
                 db,

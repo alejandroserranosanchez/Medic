@@ -76,11 +76,7 @@ def migrate(conn: sqlite3.Connection) -> None:
             conn.execute(
                 "ALTER TABLE procedure_types ADD COLUMN min_planning_minutes INTEGER NOT NULL DEFAULT 30"
             )
-            conn.execute(
-                "UPDATE procedure_types SET min_planning_minutes = duration_minutes "
-                "WHERE min_planning_minutes IS NULL OR min_planning_minutes = 30"
-            )
-            # Prefer catalogue duration as centre minimum for existing rows.
+            # Older DBs had no centre minimum; use the catalogue duration.
             conn.execute("UPDATE procedure_types SET min_planning_minutes = duration_minutes")
 
         conn.execute(

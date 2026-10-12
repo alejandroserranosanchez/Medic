@@ -45,6 +45,12 @@ def test_staff_bottleneck_after_equipment_increase():
     assert limits == ["staff"]
 
 
+def test_room_bottleneck():
+    q, limits = procedures_per_month(30, OptionInputs(25, 8, 40, 0, 0, 0))
+    assert q == 8
+    assert limits == ["room"]
+
+
 def test_zero_demand():
     q, limits = procedures_per_month(0, OptionInputs(12, 20, 40, 0, 0, 0))
     assert q == 0

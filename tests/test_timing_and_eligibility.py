@@ -59,7 +59,7 @@ def test_booking_uses_session_clinician_profile(app):
     with app.app_context():
         db = get_db()
         # Cancel seed booking so the morning is free.
-        active = next(b for b in ops_repo.list_bookings(db) if b["status"] == "active")
+        active = next(b for b in ops_repo.list_bookings(db) if b["patient_ref"] == "P-1001")
         ops_repo.cancel_booking(db, active["id"])
 
         clinicians = {c["display_name"]: c["id"] for c in ops_repo.list_clinicians(db)}
@@ -100,7 +100,7 @@ def test_booking_uses_session_clinician_profile(app):
 def test_reject_not_ready(app):
     with app.app_context():
         db = get_db()
-        session_id = ops_repo.list_sessions(db)[0]["id"]
+        session_id = next(s for s in ops_repo.list_sessions(db) if s["room_label"] == "Room A")["id"]
         request_id = ops_repo.create_request(
             db,
             patient_ref="P-NOTREADY",
@@ -125,7 +125,7 @@ def test_reject_not_ready(app):
 def test_reject_insufficient_notice(app):
     with app.app_context():
         db = get_db()
-        session_id = ops_repo.list_sessions(db)[0]["id"]
+        session_id = next(s for s in ops_repo.list_sessions(db) if s["room_label"] == "Room A")["id"]
         request_id = ops_repo.create_request(
             db,
             patient_ref="P-NOTICE",
@@ -182,7 +182,7 @@ def test_negative_notice_rejected(app):
 def test_editing_profile_does_not_change_existing_booking(app):
     with app.app_context():
         db = get_db()
-        booking = next(b for b in ops_repo.list_bookings(db) if b["status"] == "active")
+        booking = next(b for b in ops_repo.list_bookings(db) if b["patient_ref"] == "P-1001")
         old_block = booking["planning_block_minutes"]
         db.execute(
             "UPDATE clinician_procedure_profiles SET estimated_duration_minutes = 90 WHERE id = ?",

@@ -39,9 +39,9 @@ Owns procedure definitions, staffed sessions, waiting requests, bookings, and re
 
 Owns procedure fee assumptions, receivables, payments, and saved investment scenarios. Responsibilities: expected-versus-paid balances, immutable historical fee snapshots, duplicate payment prevention, financial calculations, and scenario persistence.
 
-### Boundary (design intent; not implemented while approval is pending)
+### Boundary (implemented after approval; see ADR-2)
 
-Operations must not import finance. Finance must not read operations tables directly. A small application service will coordinate booking completion and receivable creation. Both domains share one SQLite database in this monolith.
+Operations does not import finance, and finance does not import operations. `clinic/application.py` coordinates booking completion and receivable creation in one transaction. Both domains share one SQLite database in this monolith; the known couplings (fee FK to the procedure catalogue, completion reading `bookings`) are listed in `docs/report.md` §3.
 
 ## Exclusions
 
@@ -49,7 +49,7 @@ Operations must not import finance. Finance must not read operations tables dire
 - No public deployment, external managed DB/cache/queue, Redis, Celery, or microservices.
 - No real patient data, diagnosis, payment processing, or hospital/insurer integrations.
 - No claim that simplified session rules prove clinical feasibility.
-- No full application implementation until professor approval is recorded.
+- No implementation before professor approval (respected: code started on 2026-10-07 after approval).
 
 ## Acceptance targets (summary)
 

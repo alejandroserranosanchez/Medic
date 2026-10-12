@@ -1,8 +1,43 @@
-# Acceptance criteria — CareQuanta (proposed)
+# Acceptance criteria — Medic (formerly CareQuanta)
 
-**Date:** 2026-10-06  
-**Status:** Specification only. Not implemented. No test results claimed.  
-**Professor approval:** Pending.
+**Written:** 2026-10-06 (specification, before approval) · **Status updated:** 2026-10-12  
+**Professor approval:** Confirmed by student on 2026-10-07.
+
+## Status at submission (2026-10-12, `53 passed`)
+
+| Case | Status | Verified by (in `tests/`) |
+|---|---|---|
+| A1 Exact fit | Implemented | `test_booking_must_fit_session_including_turnover`, `test_vega_profile_block_is_30_not_raw_estimate` |
+| A2 Turnover rejection | Implemented | `test_turnover_prevents_adjacent_booking` |
+| A3 Half-open adjacency | Implemented | `test_half_open_touching_intervals_do_not_overlap` |
+| A4 Room / clinician conflict | Implemented | `test_room_conflict_rejected`, `test_clinician_conflict_rejected`, `test_room_conflict_is_case_insensitive` |
+| A5 Insufficient notice | Implemented for booking and replacement suggestions | `test_reject_insufficient_notice` |
+| A6 Not ready | Implemented for booking and replacement suggestions | `test_reject_not_ready`, `test_candidates_ranked_with_reasons` |
+| A7 Replacement ranking | Implemented: priority, then oldest request, then ID; eligible first | `test_candidates_ranked_with_reasons`, `test_cancel_redirects_to_replacement_suggestions` |
+| A8 Duplicate active booking | Implemented | `test_duplicate_active_booking_rejected` |
+| A9 Stale proposal acceptance | Partly: suggestions are not stored, and pressing Book re-checks everything inside the transaction; no dedicated stale-proposal test | `test_candidate_that_clashes_is_flagged` |
+| A10 Cancel vs complete | Implemented; completion also refused before the booking starts, with a performed date other than the session date, or with a due date before it | `test_cancel_frees_capacity_for_new_booking`, `test_cancel_cannot_complete`, `test_complete_booking_creates_one_receivable`, `test_completing_same_booking_twice_creates_one_receivable`, `test_cannot_complete_booking_before_it_starts`, `test_completion_dates_must_match_the_booking`, `test_mark_as_done_before_start_is_refused` |
+| B1 Partial then settle | Implemented | `test_payments_partial_duplicate_and_settle` |
+| B2 Duplicate reference | Implemented | `test_payments_partial_duplicate_and_settle` |
+| B3–B5 Overpaid / unpaid / zero fee | Implemented | `test_balance_status_labels` (parametrized) |
+| B6 Fee snapshot | Implemented | `test_complete_booking_creates_one_receivable` |
+| B7 Overdue flag | Implemented | `test_overdue_only_when_balance_positive_after_due_date` |
+| C1–C2 Equipment / staff bottleneck | Implemented | `test_guide_example_numbers`, `test_staff_bottleneck_after_equipment_increase` |
+| C3 Room bottleneck | Implemented | `test_room_bottleneck` |
+| C4 Zero demand | Implemented | `test_zero_demand` |
+| C5 Invalid inputs | Implemented; only months = 0 is tested | `test_invalid_months_rejected` |
+| C6 Keep / buy / lease arithmetic | Implemented | `test_guide_example_numbers` |
+| C7 Scenario persistence | Implemented | `test_save_and_reload_preserves_snapshots` |
+| D1 Fresh `DATA_DIR` | Implemented | `test_port_and_data_dir_come_from_environment` |
+| D2 Restart | Implemented | `test_seed_runs_once_only`, `test_session_persists_across_restart` |
+| D3 One transaction | Implemented in code (`clinic/application.py`); rollback path **not directly tested** | — |
+| D4 Bind / config | Implemented | `test_port_and_data_dir_come_from_environment` |
+
+Euro input rule chosen at implementation: `euros_to_cents` uses `Decimal` and **rejects** more than 2 decimal places instead of rounding (`test_bad_euro_amount_is_rejected`).
+
+The original specification below is kept unchanged as written on 2026-10-06.
+
+---
 
 These cases come from the product plan’s business rules. Inputs use fictional EUR amounts and clinic labels. Expected outcomes are the behaviours the future implementation and tests must satisfy.
 

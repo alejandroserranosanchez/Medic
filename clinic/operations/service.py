@@ -15,6 +15,7 @@ from datetime import datetime
 from clinic.timeutil import (
     add_minutes_hhmm,
     combine_date_time,
+    format_hhmm,
     intervals_overlap,
     labels_match,
     normalize_hhmm,
@@ -180,6 +181,24 @@ def booking_conflicts(
         if intervals_overlap(start, occupied_end, other_start, other_end):
             return f"overlaps booking {other.id} (including room turnover)"
     return None
+
+
+def free_gaps(
+    session_start: str,
+    session_end: str,
+    occupied: list[tuple[str, str]],
+) -> list[tuple[str, str]]:
+    """Free [start, end) windows left in a session after the occupied intervals."""
+    cursor = parse_hhmm(session_start)
+    end = parse_hhmm(session_end)
+    gaps: list[tuple[str, str]] = []
+    for o_start, o_end in sorted((parse_hhmm(a), parse_hhmm(b)) for a, b in occupied):
+        if o_start > cursor:
+            gaps.append((format_hhmm(cursor), format_hhmm(o_start)))
+        cursor = max(cursor, o_end)
+    if cursor < end:
+        gaps.append((format_hhmm(cursor), format_hhmm(end)))
+    return gaps
 
 
 def can_cancel(status: str) -> str | None:

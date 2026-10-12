@@ -16,9 +16,16 @@ from clinic.operations.service import (
     can_cancel,
     compute_timing_plan,
     eligibility_issues,
+    free_gaps,
     session_conflicts,
 )
-from clinic.timeutil import normalize_hhmm, normalize_label, parse_datetime_local, validate_iso_date
+from clinic.timeutil import (
+    add_minutes_hhmm,
+    normalize_hhmm,
+    normalize_label,
+    parse_datetime_local,
+    validate_iso_date,
+)
 
 
 def list_clinicians(db: sqlite3.Connection) -> list[sqlite3.Row]:
@@ -76,6 +83,29 @@ def list_requests(db: sqlite3.Connection) -> list[sqlite3.Row]:
         ORDER BY priority DESC, requested_at ASC, id ASC
         """
     ).fetchall()
+
+
+def list_waiting_requests(db: sqlite3.Connection) -> list[sqlite3.Row]:
+    """Requests with no active/completed booking, in recovery ranking order."""
+    return db.execute(
+        """
+        SELECT r.id, r.patient_ref, r.procedure_code, r.priority, r.ready, r.requested_at,
+               r.available_from, r.available_to, r.minimum_notice_minutes
+        FROM requests r
+        WHERE NOT EXISTS (
+            SELECT 1 FROM bookings b
+            WHERE b.request_id = r.id AND b.status IN ('active', 'completed')
+        )
+        ORDER BY r.priority DESC, r.requested_at ASC, r.id ASC
+        """
+    ).fetchall()
+
+
+def get_booking(db: sqlite3.Connection, booking_id: int) -> sqlite3.Row | None:
+    return db.execute(
+        "SELECT id, session_id, start_time, end_time, status FROM bookings WHERE id = ?",
+        (booking_id,),
+    ).fetchone()
 
 
 def list_procedure_types(db: sqlite3.Connection) -> list[sqlite3.Row]:
@@ -299,6 +329,123 @@ def _timing_for_session_procedure(
     )
 
 
+def _booking_windows(db: sqlite3.Connection, session_id: int) -> list[BookingWindow]:
+    rows = db.execute(
+        """
+        SELECT id, session_id, start_time, end_time, status, room_turnover_minutes
+        FROM bookings
+        WHERE session_id = ? AND status IN ('active', 'completed')
+        """,
+        (session_id,),
+    ).fetchall()
+    return [
+        BookingWindow(
+            id=row["id"],
+            session_id=row["session_id"],
+            start_time=row["start_time"],
+            end_time=row["end_time"],
+            status=row["status"],
+            room_turnover_minutes=int(row["room_turnover_minutes"] or 0),
+        )
+        for row in rows
+    ]
+
+
+def _session_window(row: sqlite3.Row) -> SessionWindow:
+    return SessionWindow(
+        id=row["id"],
+        room_label=row["room_label"],
+        clinician_label=row["clinician_label"],
+        session_date=row["session_date"],
+        start_time=row["start_time"],
+        end_time=row["end_time"],
+        clinician_id=row["clinician_id"],
+    )
+
+
+def list_schedule(db: sqlite3.Connection) -> list[dict]:
+    """Each session with its bookings and the free gaps left between them."""
+    bookings = list_bookings(db)
+    schedule = []
+    for session in list_sessions(db):
+        own = [b for b in bookings if b["session_id"] == session["id"]]
+        occupied = [
+            (b["start_time"], add_minutes_hhmm(b["end_time"], int(b["room_turnover_minutes"] or 0)))
+            for b in own
+            if b["status"] in ("active", "completed")
+        ]
+        schedule.append(
+            {
+                "session": session,
+                "bookings": own,
+                "gaps": free_gaps(session["start_time"], session["end_time"], occupied),
+            }
+        )
+    return schedule
+
+
+def slot_candidates(
+    db: sqlite3.Connection,
+    *,
+    session_id: int,
+    start_time: str,
+    now: datetime | None = None,
+) -> list[dict]:
+    """Waiting requests checked against one start time. Read-only: nothing is reserved."""
+    start = normalize_hhmm(start_time)
+    when = now or clock_now()
+    row = db.execute(
+        """
+        SELECT id, room_label, clinician_id, clinician_label, session_date, start_time, end_time
+        FROM sessions WHERE id = ?
+        """,
+        (session_id,),
+    ).fetchone()
+    if row is None:
+        raise OperationsError("session not found")
+    session = _session_window(row)
+    existing = _booking_windows(db, session_id)
+
+    candidates = []
+    for req in list_waiting_requests(db):
+        try:
+            plan = _timing_for_session_procedure(
+                db,
+                clinician_id=session.clinician_id,
+                procedure_code=req["procedure_code"],
+                start_time=start,
+            )
+        except ValueError:
+            continue
+        issues = eligibility_issues(
+            ready=bool(req["ready"]),
+            available_from=req["available_from"],
+            available_to=req["available_to"],
+            minimum_notice_minutes=int(req["minimum_notice_minutes"]),
+            session_date=session.session_date,
+            start_time=start,
+            end_time=plan.end_time,
+            now=when,
+            has_active_booking=False,
+            has_completed_booking=False,
+        )
+        if booking_fits_session(session, start, plan.end_time, plan.room_turnover_minutes):
+            issues.append("does_not_fit")
+        elif booking_conflicts(start, plan.end_time, plan.room_turnover_minutes, existing):
+            issues.append("overlaps_booking")
+        candidates.append(
+            {
+                "request": req,
+                "start_time": start,
+                "end_time": plan.end_time,
+                "occupied_end_time": plan.occupied_end_time,
+                "issues": issues,
+            }
+        )
+    # Eligible first; within each group keep the ranking order (priority, then oldest request).
+    return sorted(candidates, key=lambda c: bool(c["issues"]))
+
+
 def create_booking(
     db: sqlite3.Connection,
     *,
@@ -366,42 +513,15 @@ def create_booking(
         if issues:
             raise OperationsError("not eligible: " + ", ".join(issues))
 
-        session = SessionWindow(
-            id=session_row["id"],
-            room_label=session_row["room_label"],
-            clinician_label=session_row["clinician_label"],
-            session_date=session_row["session_date"],
-            start_time=session_row["start_time"],
-            end_time=session_row["end_time"],
-            clinician_id=session_row["clinician_id"],
-        )
+        session = _session_window(session_row)
         reason = booking_fits_session(
             session, start, plan.end_time, plan.room_turnover_minutes
         )
         if reason:
             raise OperationsError(reason)
 
-        existing_rows = db.execute(
-            """
-            SELECT id, session_id, start_time, end_time, status, room_turnover_minutes
-            FROM bookings
-            WHERE session_id = ? AND status IN ('active', 'completed')
-            """,
-            (session_id,),
-        ).fetchall()
-        existing = [
-            BookingWindow(
-                id=row["id"],
-                session_id=row["session_id"],
-                start_time=row["start_time"],
-                end_time=row["end_time"],
-                status=row["status"],
-                room_turnover_minutes=int(row["room_turnover_minutes"] or 0),
-            )
-            for row in existing_rows
-        ]
         reason = booking_conflicts(
-            start, plan.end_time, plan.room_turnover_minutes, existing
+            start, plan.end_time, plan.room_turnover_minutes, _booking_windows(db, session_id)
         )
         if reason:
             raise OperationsError(reason)

@@ -1,60 +1,103 @@
 {% extends "base.html" %}
 {% block content %}
-<section class="panel">
-  <h1>Payments</h1>
-  <p class="note">
-    Completing a booking creates <strong>one</strong> receivable with the fee frozen at that moment.
-    Later catalogue fee edits do not rewrite history. Statuses are calculated from SQLite, not hardcoded in HTML.
-    As-of date for overdue: {{ as_of_date }}.
-  </p>
-</section>
+{% set status_labels = {'unpaid': 'Unpaid', 'partial': 'Partly paid', 'settled': 'Settled', 'overpaid': 'Overpaid'} %}
+{% set status_pills = {'unpaid': 'amber', 'partial': 'amber', 'settled': 'green', 'overpaid': 'gray'} %}
 
-<section class="panel">
-  <h2>Complete a booking → create receivable</h2>
-  <form method="post" action="{{ url_for('finance.complete') }}" class="form-grid">
-    <label>Booking ID <input name="booking_id" type="number" required></label>
-    <label>Performed date <input name="performed_date" type="date" required value="2026-10-09"></label>
-    <label>Due date <input name="due_date" type="date" required value="2026-10-23"></label>
-    <button type="submit">Complete &amp; create receivable</button>
-  </form>
-</section>
+<div class="pagehead">
+  <div>
+    <div class="eyebrow">Completed activity → collections</div>
+    <h1>Collections</h1>
+    <p>Check that completed procedures have been paid as expected.</p>
+  </div>
+  <a class="btn" href="{{ url_for('operations.capacity') }}">View schedule →</a>
+</div>
 
-<section class="panel">
-  <h2>Receivables</h2>
-  <table>
-    <thead>
-      <tr>
-        <th>ID</th><th>Booking</th><th>Proc</th><th>Expected</th><th>Paid</th><th>Balance</th><th>Status</th><th>Overdue</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for r in receivables %}
-      <tr>
-        <td>{{ r.id }}</td>
-        <td>{{ r.source_booking_id }}</td>
-        <td>{{ r.procedure_code }}</td>
-        <td>{{ '%.2f'|format(r.expected_fee_cents / 100) }} €</td>
-        <td>{{ '%.2f'|format(r.balance.paid_cents / 100) }} €</td>
-        <td>{{ '%.2f'|format(r.balance.balance_cents / 100) }} €</td>
-        <td><span class="status">{{ r.balance.status }}</span></td>
-        <td>{{ "yes" if r.balance.overdue else "no" }}</td>
-      </tr>
+<div class="balance-row">
+  <div><span class="muted">Expected</span><strong>{{ totals.expected|eur }}</strong><small class="muted">{{ receivables|length }} completed procedure{{ 's' if receivables|length != 1 }}</small></div>
+  <div><span class="muted">Received</span><strong>{{ totals.paid|eur }}</strong><small class="muted">Recorded receipts</small></div>
+  <div class="{{ 'attention' if totals.outstanding }}"><span class="muted">Outstanding</span><strong>{{ totals.outstanding|eur }}</strong><small class="muted">Still to collect</small></div>
+  <div class="{{ 'danger' if totals.overdue }}"><span class="muted">Overdue</span><strong>{{ totals.overdue }}</strong><small class="muted">Past due date as of {{ as_of_date|nice_date }}</small></div>
+</div>
+
+{% for r in receivables %}
+{% set b = r.balance %}
+{% set act = activity.get(r.source_booking_id) %}
+{% set paid = history.get(r.id, []) %}
+{% set pct = 100 if r.expected_fee_cents == 0 else [100, (100 * b.paid_cents / r.expected_fee_cents)|round(0)|int]|min %}
+<div class="payment-grid" id="booking-{{ r.source_booking_id }}">
+  <article class="card">
+    <div class="cardhead">
+      <div>
+        <h2>{{ act.procedure_name if act else r.procedure_code }} {% if act %}<span class="muted thin">/ {{ act.patient_ref }}</span>{% endif %}</h2>
+        <p>{% if act %}{{ act.clinician_label }} · {{ act.room_label }} · {% endif %}completed {{ r.performed_date|nice_date }}</p>
+      </div>
+      <div class="actions">
+        <span class="pill {{ status_pills.get(b.status, 'gray') }}">{{ status_labels.get(b.status, b.status) }}</span>
+        {% if b.overdue %}<span class="pill red">Overdue</span>{% endif %}
+      </div>
+    </div>
+    <div class="padded">
+      <div class="meta-grid">
+        <div><small class="muted">Activity reference</small><strong>Booking #{{ r.source_booking_id }}{% if act %} · {{ act.start_time }}{% endif %}</strong></div>
+        <div><small class="muted">Collection record</small><strong>#{{ r.id }}</strong></div>
+        <div><small class="muted">Due date</small><strong>{{ r.due_date|nice_date }}</strong></div>
+      </div>
+      <div class="bar-head">
+        <strong>{{ b.paid_cents|eur }} received of {{ r.expected_fee_cents|eur }}</strong>
+        <span class="muted">{% if b.balance_cents > 0 %}{{ b.balance_cents|eur }} outstanding{% elif b.balance_cents < 0 %}{{ (-b.balance_cents)|eur }} overpaid — check or refund{% else %}fully paid{% endif %}</span>
+      </div>
+      <div class="bar"><span style="width: {{ pct }}%"></span></div>
+      <p class="metric-explain">The expected fee was saved when this procedure was marked as done.</p>
+
+      <div class="smalltitle">Payment history</div>
+      {% if paid %}
+      <div class="table-wrap">
+        <table class="schedule-table compact">
+          <thead><tr><th>Date</th><th>Reference</th><th>Amount</th></tr></thead>
+          <tbody>
+            {% for p in paid %}
+            <tr><td>{{ p.paid_date|nice_date }}</td><td>{{ p.payment_reference }}</td><td class="num"><strong>{{ p.amount_cents|eur }}</strong></td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
       {% else %}
-      <tr><td colspan="8">No receivables yet. Complete an active booking first.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</section>
+      <p class="muted small-text">No payments recorded yet.</p>
+      {% endif %}
+      <details>
+        <summary>How this balance is calculated</summary>
+        <p>Expected fee − recorded payments = outstanding amount. Overdue means money is still owed after the due date; a partial payment is not automatically an insurer error. This is a collection record, not a tax invoice.</p>
+      </details>
+    </div>
+  </article>
 
-<section class="panel">
-  <h2>Record a payment</h2>
-  <form method="post" action="{{ url_for('finance.record_payment') }}" class="form-grid">
-    <label>Receivable ID <input name="receivable_id" type="number" required></label>
-    <label>Payment reference <input name="payment_reference" required value="P1"></label>
-    <label>Amount (EUR) <input name="amount_eur" required value="90.00"></label>
-    <label>Paid date <input name="paid_date" type="date" required value="2026-10-09"></label>
-    <button type="submit">Save payment</button>
-  </form>
-  <p class="note">Example: expected 120.00 → pay 90.00 (partial) → pay 30.00 (settled). Repeating the same reference does not double-count.</p>
-</section>
+  <aside class="card">
+    <div class="cardhead"><h2>Record a payment</h2></div>
+    <div class="padded">
+      {% if b.balance_cents > 0 %}
+      <form method="post" action="{{ url_for('finance.record_payment') }}">
+        <input type="hidden" name="receivable_id" value="{{ r.id }}">
+        <label class="field">Amount (€) <input name="amount_eur" required inputmode="decimal" value="{{ cents_to_euros(b.balance_cents) }}"></label>
+        <label class="field">Payment reference <input name="payment_reference" required placeholder="receipt or bank reference"></label>
+        <label class="field">Received on <input name="paid_date" type="date" required value="{{ as_of_date }}"></label>
+        <button type="submit" class="btn primary wide">Save payment</button>
+      </form>
+      <p class="form-help">Use the receipt or bank reference. Sending the same payment twice is ignored, so nothing is counted double.</p>
+      {% else %}
+      <p class="muted small-text">Nothing outstanding on this record.</p>
+      {% endif %}
+    </div>
+  </aside>
+</div>
+{% else %}
+<article class="card"><div class="padded"><p class="empty">No collection records yet. On the <a href="{{ url_for('operations.capacity') }}">Schedule</a>, press <strong>Mark as done</strong> on a booking that has started.</p></div></article>
+{% endfor %}
+
+<div class="card linkcard">
+  <div>
+    <h3>Connected to the work your clinic has completed</h3>
+    <p>Scheduled bookings create no amount due until they are marked as done.</p>
+  </div>
+  <a class="textlink" href="{{ url_for('operations.capacity') }}">Back to schedule →</a>
+</div>
 {% endblock %}

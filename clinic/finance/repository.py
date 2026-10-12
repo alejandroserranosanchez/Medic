@@ -81,6 +81,19 @@ def list_receivables(db: sqlite3.Connection, as_of_date: str) -> list[dict]:
     return out
 
 
+def payments_by_receivable(db: sqlite3.Connection) -> dict[int, list[sqlite3.Row]]:
+    rows = db.execute(
+        """
+        SELECT id, receivable_id, payment_reference, amount_cents, paid_date
+        FROM payments ORDER BY paid_date, id
+        """
+    ).fetchall()
+    grouped: dict[int, list[sqlite3.Row]] = {}
+    for row in rows:
+        grouped.setdefault(int(row["receivable_id"]), []).append(row)
+    return grouped
+
+
 def record_payment(
     db: sqlite3.Connection,
     *,

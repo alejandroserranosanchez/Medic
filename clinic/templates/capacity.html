@@ -1,147 +1,234 @@
 {% extends "base.html" %}
 {% block content %}
-<section class="panel">
-  <h1>Capacity</h1>
-  <p class="note">
-    End time is calculated on the server:
-    <code>block = max(centre minimum, estimate + variability)</code>,
-    then room turnover is added for occupation.
-    <strong>ready</strong> means a professional confirmed scheduling fitness for the proposed window — not automated medical clearance.
-  </p>
-  {% if demo_now %}
-  <p class="note"><strong>Demo clock:</strong> {{ demo_now }} (planning uses this instead of the real clock).</p>
-  {% else %}
-  <p class="note">Planning clock now: {{ clock_now }}</p>
-  {% endif %}
-</section>
+{% set reason_labels = {
+  'not_ready': 'Preparation not confirmed',
+  'outside_availability': 'Not available at this time',
+  'insufficient_notice': 'Not enough notice before this start',
+  'invalid_availability_window': 'Availability window is invalid',
+  'does_not_fit': "Doesn't fit before the session ends",
+  'overlaps_booking': 'Clashes with another booking',
+} %}
+{% set selected_start = slot.start_time if slot else None %}
 
-<section class="panel">
-  <h2>Sessions</h2>
-  <table>
-    <thead>
-      <tr><th>ID</th><th>Date</th><th>Room</th><th>Clinician</th><th>Start</th><th>End</th></tr>
-    </thead>
-    <tbody>
-      {% for s in sessions %}
-      <tr>
-        <td>{{ s.id }}</td>
-        <td>{{ s.session_date }}</td>
-        <td>{{ s.room_label }}</td>
-        <td>{{ s.clinician_label }}</td>
-        <td>{{ s.start_time }}</td>
-        <td>{{ s.end_time }}</td>
-      </tr>
-      {% else %}
-      <tr><td colspan="6">No sessions yet.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
+<div class="pagehead">
+  <div>
+    <div class="eyebrow">Daily operations</div>
+    <h1>Schedule</h1>
+    <p>Match waiting requests to time your clinic can actually use.</p>
+  </div>
+  <div class="actions">
+    <a class="btn" href="#add-session">+ Add session</a>
+    <a class="btn primary" href="#add-request">+ Add waiting request</a>
+  </div>
+</div>
 
-  <form method="post" action="{{ url_for('operations.add_session') }}" class="form-grid">
-    <h3>Add session</h3>
-    <label>Room <input name="room_label" required value="Room B"></label>
-    <label>Clinician
-      <select name="clinician_id" required>
-        {% for c in clinicians %}
-        <option value="{{ c.id }}">{{ c.display_name }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>Date <input name="session_date" type="date" required value="2026-10-10"></label>
-    <label>Start <input name="start_time" required placeholder="HH:MM" value="09:00"></label>
-    <label>End <input name="end_time" required placeholder="HH:MM" value="12:00"></label>
-    <button type="submit">Save session</button>
-  </form>
-</section>
+<div class="schedule-grid">
+  <div class="stack">
+    {% for item in schedule %}
+    {% set s = item.session %}
+    {% set live = item.bookings|rejectattr('status', 'equalto', 'cancelled')|list %}
+    {% set cancelled = item.bookings|selectattr('status', 'equalto', 'cancelled')|list %}
+    <article class="card">
+      <div class="cardhead">
+        <div>
+          <h2>{{ s.room_label }} <span class="muted thin">/ {{ s.clinician_label }}</span></h2>
+          <p>{{ s.session_date|nice_date }} · staffed session {{ s.start_time }}–{{ s.end_time }}</p>
+        </div>
+        {% if item.past %}
+        <span class="pill gray">Past session · {{ item.free_minutes }} min unused</span>
+        {% else %}
+        <span class="pill {{ 'teal' if item.free_minutes else 'gray' }}">{{ item.free_minutes }} min free</span>
+        {% endif %}
+      </div>
+      <div class="padded">
+        {% include "_timeline.html" %}
+      </div>
 
-<section class="panel">
-  <h2>Waiting requests</h2>
-  <table>
-    <thead>
-      <tr><th>ID</th><th>Patient ref</th><th>Procedure</th><th>Priority</th><th>Ready</th><th>Availability</th></tr>
-    </thead>
-    <tbody>
-      {% for r in requests %}
-      <tr>
-        <td>{{ r.id }}</td>
-        <td>{{ r.patient_ref }}</td>
-        <td>{{ r.procedure_code }}</td>
-        <td>{{ r.priority }}</td>
-        <td>{{ "yes" if r.ready else "no" }}</td>
-        <td>{{ r.available_from }} → {{ r.available_to }} (notice {{ r.minimum_notice_minutes }}m)</td>
-      </tr>
-      {% else %}
-      <tr><td colspan="6">No requests yet.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
+      {% if live %}
+      <div class="table-wrap">
+        <table class="schedule-table">
+          <thead><tr><th>Time</th><th>Procedure / request</th><th>Planned time</th><th>Status</th></tr></thead>
+          <tbody>
+            {% for b in live %}
+            <tr>
+              <td class="time">{{ b.start_time }}–{{ b.end_time }}</td>
+              <td><strong>{{ procedure_names.get(b.procedure_code, b.procedure_code) }}</strong><small>{{ b.patient_ref }}</small></td>
+              <td>
+                <details class="why">
+                  <summary>{{ b.planning_block_minutes }} + {{ b.room_turnover_minutes }} min</summary>
+                  <p>
+                    {% if b.timing_source == 'profile' %}
+                      {{ s.clinician_label }}'s saved profile: {{ b.estimated_duration_minutes }} min estimate + {{ b.variability_minutes }} min planning buffer.
+                    {% else %}
+                      Catalogue time: {{ b.estimated_duration_minutes }} min.
+                    {% endif %}
+                    Centre minimum {{ b.min_planning_minutes }} min, so {{ b.planning_block_minutes }} min is planned.
+                    Room turnaround: {{ b.room_turnover_minutes }} min. Saved with the booking, so later profile edits don't change it.
+                  </p>
+                </details>
+                <small>{{ 'Clinician profile' if b.timing_source == 'profile' else 'Catalogue default' }}</small>
+              </td>
+              <td>
+                {% if b.status == 'completed' %}
+                  <a class="pill green" href="{{ url_for('finance.payments') }}#booking-{{ b.id }}">Completed →</a>
+                {% else %}
+                <div class="row-actions">
+                  {% if item.completable[b.id] %}
+                  <form method="post" action="{{ url_for('finance.complete', booking_id=b.id) }}">
+                    <input type="hidden" name="performed_date" value="{{ s.session_date }}">
+                    <input type="hidden" name="due_date" value="{{ item.due_date }}">
+                    <button type="submit" class="btn primary small">Mark as done</button>
+                  </form>
+                  {% else %}
+                  <span class="pill teal" title="Can be marked as done from {{ s.session_date|nice_date }} {{ b.start_time }}">Booked</span>
+                  {% endif %}
+                  <form method="post" action="{{ url_for('operations.cancel_booking', booking_id=b.id) }}"
+                        onsubmit="return confirm('Cancel {{ b.patient_ref }}? The slot will be offered to waiting requests.');">
+                    <button type="submit" class="btn small ghost-danger">Cancel</button>
+                  </form>
+                </div>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
 
-  <form method="post" action="{{ url_for('operations.add_request') }}" class="form-grid">
-    <h3>Add request</h3>
-    <label>Patient ref <input name="patient_ref" required value="P-2002"></label>
-    <label>Procedure
-      <select name="procedure_code" required>
-        {% for p in procedures %}
-        <option value="{{ p.code }}">{{ p.display_name }} (catalogue {{ p.duration_minutes }}m, room +{{ p.turnover_minutes }}m, min {{ p.min_planning_minutes }}m)</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>Priority <input name="priority" type="number" min="0" max="10" required value="1"></label>
-    <label>Requested at <input name="requested_at" required value="2026-10-09T10:00:00"></label>
-    <label>Available from <input name="available_from" required value="2026-10-10T09:00:00"></label>
-    <label>Available to <input name="available_to" required value="2026-10-10T18:00:00"></label>
-    <label>Min notice (min) <input name="minimum_notice_minutes" type="number" min="0" required value="30"></label>
-    <label class="check"><input name="ready" type="checkbox"> Ready (human scheduling confirmation)</label>
-    <button type="submit">Save request</button>
-  </form>
-</section>
+      {% if cancelled %}
+      <div class="padded">
+        <details>
+          <summary>Cancelled activity · {{ cancelled|length }} record{{ 's' if cancelled|length != 1 }}</summary>
+          <ul class="history">
+            {% for b in cancelled %}
+            <li>{{ b.patient_ref }} · {{ procedure_names.get(b.procedure_code, b.procedure_code) }} · original {{ b.start_time }}–{{ b.end_time }}. Kept for history; it no longer occupies the slot.</li>
+            {% endfor %}
+          </ul>
+        </details>
+      </div>
+      {% endif %}
+    </article>
+    {% else %}
+    <article class="card"><div class="padded"><p class="empty">No sessions yet. Add one to start scheduling.</p></div></article>
+    {% endfor %}
 
-<section class="panel">
-  <h2>Bookings</h2>
-  <table>
-    <thead>
-      <tr><th>ID</th><th>Patient</th><th>Proc</th><th>Session</th><th>Plan</th><th>Status</th><th></th></tr>
-    </thead>
-    <tbody>
-      {% for b in bookings %}
-      <tr>
-        <td>{{ b.id }}</td>
-        <td>{{ b.patient_ref }}</td>
-        <td>{{ b.procedure_code }}</td>
-        <td>#{{ b.session_id }} {{ b.room_label }} / {{ b.clinician_label }} ({{ b.session_date }})</td>
-        <td>
-          {{ b.start_time }}–{{ b.end_time }}
-          (block {{ b.planning_block_minutes }}m =
-          max({{ b.min_planning_minutes }}, {{ b.estimated_duration_minutes }}+{{ b.variability_minutes }});
-          room +{{ b.room_turnover_minutes }}m; source {{ b.timing_source }})
-        </td>
-        <td><span class="status {{ b.status }}">{{ b.status }}</span></td>
-        <td>
-          {% if b.status == 'active' %}
-          <form method="post" action="{{ url_for('operations.cancel_booking', booking_id=b.id) }}" style="display:inline">
-            <button type="submit" class="danger">Cancel</button>
-          </form>
-          <form method="post" action="{{ url_for('finance.complete', booking_id=b.id) }}" style="display:inline">
-            <input type="hidden" name="performed_date" value="2026-10-09">
-            <input type="hidden" name="due_date" value="2026-10-23">
-            <button type="submit">Complete</button>
-          </form>
+    <details class="card disclosure" id="add-session">
+      <summary>+ Add a session</summary>
+      <form method="post" action="{{ url_for('operations.add_session') }}" class="form-grid">
+        <label class="field">Room <input name="room_label" required placeholder="e.g. Room C"></label>
+        <label class="field">Clinician
+          <select name="clinician_id" required>
+            {% for c in clinicians %}<option value="{{ c.id }}">{{ c.display_name }}</option>{% endfor %}
+          </select>
+        </label>
+        <label class="field">Date <input name="session_date" type="date" required value="{{ tomorrow }}"></label>
+        <label class="field">From <input name="start_time" type="time" required value="09:00"></label>
+        <label class="field">To <input name="end_time" type="time" required value="12:00"></label>
+        <button type="submit" class="btn primary">Add session</button>
+      </form>
+      <p class="form-help">A room or a clinician can't be in two overlapping sessions.</p>
+    </details>
+  </div>
+
+  <aside class="card sticky" id="match">
+    <div class="cardhead">
+      <h2>Find a match</h2>
+      {% if slot %}
+        {% set eligible = slot.candidates|rejectattr('issues')|list %}
+        <span class="pill {{ 'green' if eligible else 'amber' }}">{{ eligible|length }} eligible</span>
+      {% endif %}
+    </div>
+    <div class="padded">
+      {% if slot %}
+        <div class="selected-slot">
+          <span class="eyebrow">Selected start</span>
+          <strong>{{ slot.start_time }}</strong>
+          {% if slot.session %}<small class="muted">{{ slot.session.room_label }} · {{ slot.session.clinician_label }} · {{ slot.session.session_date|nice_date }}</small>{% endif %}
+        </div>
+
+        {% for c in slot.candidates %}
+        <div class="candidate">
+          <div class="candidate-head"><strong>{{ c.request.patient_ref }}</strong><span class="pill gray">Priority {{ c.request.priority }}</span></div>
+          <p>{{ procedure_names.get(c.request.procedure_code, c.request.procedure_code) }} · {{ c.start_time }}–{{ c.end_time }}, room free {{ c.occupied_end_time }}</p>
+          {% if not c.issues %}
+            <form method="post" action="{{ url_for('operations.add_booking') }}">
+              <input type="hidden" name="request_id" value="{{ c.request.id }}">
+              <input type="hidden" name="session_id" value="{{ slot.session.id }}">
+              <input type="hidden" name="start_time" value="{{ c.start_time }}">
+              <button type="submit" class="btn primary small">Book {{ c.request.patient_ref }}</button>
+            </form>
+          {% else %}
+            {% for issue in c.issues %}<div class="why-not">{{ reason_labels.get(issue, issue) }}</div>{% endfor %}
           {% endif %}
-        </td>
-      </tr>
-      {% else %}
-      <tr><td colspan="7">No bookings yet.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
+        </div>
+        {% else %}
+        <p class="empty">No requests are waiting.</p>
+        {% endfor %}
 
-  <form method="post" action="{{ url_for('operations.add_booking') }}" class="form-grid">
-    <h3>Add booking</h3>
-    <p class="note" style="grid-column: 1 / -1;">Enter start only. The server calculates end from the session clinician’s profile (or catalogue).</p>
-    <label>Request ID <input name="request_id" type="number" required></label>
-    <label>Session ID <input name="session_id" type="number" required></label>
-    <label>Start <input name="start_time" required placeholder="HH:MM" value="10:00"></label>
-    <button type="submit">Book</button>
-  </form>
-</section>
+        {% if slot.session %}
+        <form method="get" action="{{ url_for('operations.capacity') }}#match" class="inline-form">
+          <input type="hidden" name="session" value="{{ slot.session.id }}">
+          <label class="field">Try another start <input type="time" name="start" value="{{ slot.start_time }}" step="300" required></label>
+          <button type="submit" class="btn">Check</button>
+        </form>
+        {% endif %}
+        <div class="inline-note">Ranked by priority, then longest waiting. A free gap is a possibility, not a booking: nothing is reserved until you press Book, and booking re-checks every rule.</div>
+      {% else %}
+        <p class="muted small-text">Choose a free gap on a timeline to see which waiting requests fit, and why the others don't.</p>
+        {% for item in schedule if item.gaps and item.session.session_date >= clock_now.date().isoformat() %}
+          {% for g in item.gaps %}
+          <a class="gap-link" href="{{ url_for('operations.capacity', session=item.session.id, start=g[0]) }}#match">{{ item.session.room_label }} · {{ item.session.session_date|nice_date }} · {{ g[0] }}–{{ g[1] }} →</a>
+          {% endfor %}
+        {% endfor %}
+      {% endif %}
+    </div>
+  </aside>
+</div>
+
+<article class="card waitingcard" id="waiting">
+  <div class="cardhead">
+    <h2>Waiting requests <span class="pill gray">{{ waiting|length }}</span></h2>
+  </div>
+  {% if waiting %}
+  <div class="table-wrap">
+    <table class="schedule-table">
+      <thead><tr><th>Request</th><th>Procedure</th><th>Priority</th><th>Preparation</th><th>Available</th><th>Notice</th></tr></thead>
+      <tbody>
+        {% for r in waiting %}
+        <tr>
+          <td><strong>{{ r.patient_ref }}</strong></td>
+          <td>{{ procedure_names.get(r.procedure_code, r.procedure_code) }}</td>
+          <td>{{ r.priority }}</td>
+          <td>{% if r.ready %}<span class="pill green">Confirmed</span>{% else %}<span class="pill amber">Not confirmed</span>{% endif %}</td>
+          <td>{{ r.available_from|nice_datetime }} → {{ r.available_to|nice_datetime }}</td>
+          <td>{{ r.minimum_notice_minutes }} min</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="padded"><p class="empty">Nobody is waiting.</p></div>
+  {% endif %}
+  <div class="padded">
+    <details class="disclosure-inline" id="add-request">
+      <summary>+ Add waiting request</summary>
+      <form method="post" action="{{ url_for('operations.add_request') }}" class="form-grid">
+        <label class="field">Patient reference <input name="patient_ref" required placeholder="e.g. P-2002"></label>
+        <label class="field">Procedure
+          <select name="procedure_code" required>
+            {% for p in procedures %}<option value="{{ p.code }}">{{ p.display_name }}</option>{% endfor %}
+          </select>
+        </label>
+        <label class="field">Priority · higher first (0–10) <input name="priority" type="number" min="0" max="10" required value="1"></label>
+        <label class="field">Available from <input name="available_from" type="datetime-local" required value="{{ tomorrow }}T09:00"></label>
+        <label class="field">Available until <input name="available_to" type="datetime-local" required value="{{ tomorrow }}T18:00"></label>
+        <label class="field">Minimum notice (minutes) <input name="minimum_notice_minutes" type="number" min="0" required value="60"></label>
+        <label class="check"><input name="ready" type="checkbox"> Scheduling readiness confirmed by a professional</label>
+        <button type="submit" class="btn primary">Add to waiting list</button>
+      </form>
+    </details>
+  </div>
+</article>
 {% endblock %}

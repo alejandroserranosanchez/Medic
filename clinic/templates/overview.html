@@ -1,13 +1,115 @@
 {% extends "base.html" %}
 {% block content %}
-<section class="panel">
-  <h1>Overview</h1>
-  <p class="note">Capacity, payments, and keep/buy/lease investment are available. All data is fictional. Recovery-slot proposals are still out of scope for the demo flow.</p>
-  <ul class="stats">
-    <li><strong>{{ counts.sessions }}</strong> sessions</li>
-    <li><strong>{{ counts.bookings_active }}</strong> active bookings</li>
-    <li><strong>{{ counts.waiting_requests }}</strong> waiting requests (no active/completed booking)</li>
-  </ul>
-  <p><a class="button" href="{{ url_for('operations.capacity') }}">Open capacity</a></p>
-</section>
+<div class="pagehead">
+  <div>
+    <div class="eyebrow">{{ clock_now.strftime('%A, %d %B') }}</div>
+    <h1>Your clinic, in focus.</h1>
+    <p>See what needs attention, from the next appointment to the last payment.</p>
+  </div>
+  <a class="btn primary" href="{{ url_for('operations.capacity') }}">Open schedule →</a>
+</div>
+
+<div class="stats">
+  <div class="stat">
+    <div class="label">Scheduled, not started</div>
+    <div class="value">{{ counts.scheduled }}</div>
+    <div class="note">{{ counts.to_complete }} started and waiting to be marked done</div>
+  </div>
+  <div class="stat">
+    <div class="label">Unbooked requests</div>
+    <div class="value">{{ counts.waiting_requests }}</div>
+    <div class="note">Eligibility depends on the slot</div>
+  </div>
+  <div class="stat {{ 'attention' if counts.outstanding_cents }}">
+    <div class="label">Outstanding collections</div>
+    <div class="value">{{ counts.outstanding_cents|eur }}</div>
+    <div class="note">{{ counts.open_receivables }} open · {{ counts.overdue }} overdue</div>
+  </div>
+  <div class="stat">
+    <div class="label">Free room time</div>
+    <div class="value">{{ preview.free_minutes if preview else 0 }} <span class="subvalue">min</span></div>
+    <div class="note">{% if preview %}{{ preview.session.room_label }} · {{ preview.session.session_date|nice_date }}{% else %}No sessions yet{% endif %}</div>
+  </div>
+</div>
+
+<div class="grid-main">
+  <article class="card">
+    <div class="cardhead">
+      <div>
+        <h2>{% if preview and preview.session.session_date >= clock_now.date().isoformat() %}Next session{% else %}Latest session{% endif %}</h2>
+        {% if preview %}<p>{{ preview.session.session_date|nice_date }} · clinician-specific timings</p>{% endif %}
+      </div>
+      <a class="textlink" href="{{ url_for('operations.capacity') }}">View schedule →</a>
+    </div>
+    <div class="padded">
+      {% if preview %}
+        {% set item = preview %}
+        <div class="sessiontitle">
+          <div><strong>{{ item.session.room_label }}</strong><p>{{ item.session.clinician_label }} · {{ item.session.start_time }}–{{ item.session.end_time }}</p></div>
+        </div>
+        {% include "_timeline.html" %}
+        <div class="rows">
+          {% for b in item.bookings if b.status != 'cancelled' %}
+          {% set r = receivable_by_booking.get(b.id) %}
+          <div class="row">
+            <div class="left">
+              <span class="time">{{ b.start_time }}</span>
+              <div>
+                <strong>{{ b.patient_ref }} · {{ procedure_names.get(b.procedure_code, b.procedure_code) }}</strong>
+                <p>{{ b.planning_block_minutes }} min planned + {{ b.room_turnover_minutes }} min room turnaround</p>
+              </div>
+            </div>
+            {% if r and r.balance.balance_cents > 0 %}
+              <a class="pill amber" href="{{ url_for('finance.payments') }}#booking-{{ b.id }}">{{ r.balance.balance_cents|eur }} outstanding →</a>
+            {% elif b.status == 'completed' %}
+              <a class="pill green" href="{{ url_for('finance.payments') }}#booking-{{ b.id }}">Completed →</a>
+            {% else %}
+              <span class="pill teal">Booked</span>
+            {% endif %}
+          </div>
+          {% else %}
+          <p class="empty">No bookings in this session yet.</p>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="empty">No sessions yet. <a href="{{ url_for('operations.capacity') }}#add-session">Add a session</a>.</p>
+      {% endif %}
+    </div>
+  </article>
+
+  <aside class="card">
+    <div class="cardhead"><h2>Needs attention</h2></div>
+    <div class="padded">
+      {% set ns = namespace(n=0) %}
+      {% if first_gap %}{% set ns.n = ns.n + 1 %}
+      <div class="task">
+        <div class="tasktitle"><span class="dot"></span>Review the open slot</div>
+        <p>{{ first_gap.start }}–{{ first_gap.end }} is free. {{ first_gap.eligible }} waiting request{{ 's' if first_gap.eligible != 1 }} eligible for the {{ first_gap.start }} start.</p>
+        <a class="textlink" href="{{ url_for('operations.capacity', session=preview.session.id, start=first_gap.start) }}#match">See the reasons →</a>
+      </div>
+      {% endif %}
+      {% if counts.to_complete %}{% set ns.n = ns.n + 1 %}
+      <div class="task">
+        <div class="tasktitle"><span class="dot teal"></span>Record completed activity</div>
+        <p>{{ counts.to_complete }} booking{{ 's have' if counts.to_complete != 1 else ' has' }} started but {{ 'are' if counts.to_complete != 1 else 'is' }} not marked as done.</p>
+        <a class="textlink" href="{{ url_for('operations.capacity') }}">Open schedule →</a>
+      </div>
+      {% endif %}
+      {% if counts.open_receivables %}{% set ns.n = ns.n + 1 %}
+      <div class="task">
+        <div class="tasktitle"><span class="dot teal"></span>Follow up {{ counts.outstanding_cents|eur }}</div>
+        <p>{{ counts.open_receivables }} completed procedure{{ 's' if counts.open_receivables != 1 }} not fully paid{% if counts.overdue %}, {{ counts.overdue }} overdue{% endif %}.</p>
+        <a class="textlink" href="{{ url_for('finance.payments') }}">Open collections →</a>
+      </div>
+      {% endif %}
+      {% if ns.n == 0 %}<p class="empty">Nothing needs attention right now.</p>{% endif %}
+    </div>
+  </aside>
+</div>
+
+<div class="flow">
+  <div class="flow-item"><span class="step">1</span><div><strong>Schedule a suitable request</strong><p>Readiness, notice and time checked</p></div></div>
+  <div class="flow-item"><span class="step">2</span><div><strong>Record completed activity</strong><p>Only after the booking has started; fee saved once</p></div></div>
+  <div class="flow-item"><span class="step">3</span><div><strong>Follow up the collection</strong><p>Expected → received → outstanding</p></div></div>
+</div>
 {% endblock %}

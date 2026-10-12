@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from flask import Blueprint, flash, redirect, render_template, request, url_for
 
-from clinic.application import complete_booking
+from clinic.application import CompletionError, complete_booking, completed_activity
 from clinic.clock import now as clock_now
 from clinic.db import get_db
 from clinic.finance import repository as finance_repo
@@ -14,10 +14,11 @@ from clinic.finance.investment import (
     ScenarioInputs,
     compare_scenario,
     example_guide_inputs,
+    inputs_to_dict,
+    result_to_dict,
 )
 from clinic.finance.moneyparse import cents_to_euros, euros_to_cents
 from clinic.finance.repository import FinanceError
-from clinic.operations.service import OperationsError
 from clinic.timeutil import validate_iso_date
 
 bp = Blueprint("finance", __name__)
@@ -27,10 +28,21 @@ bp = Blueprint("finance", __name__)
 def payments():
     db = get_db()
     today = clock_now().date().isoformat()
+    receivables = finance_repo.list_receivables(db, as_of_date=today)
+    totals = {
+        "expected": sum(r["expected_fee_cents"] for r in receivables),
+        "paid": sum(r["balance"].paid_cents for r in receivables),
+        "outstanding": sum(max(r["balance"].balance_cents, 0) for r in receivables),
+        "overdue": sum(1 for r in receivables if r["balance"].overdue),
+    }
     return render_template(
         "payments.html",
-        receivables=finance_repo.list_receivables(db, as_of_date=today),
+        receivables=receivables,
+        totals=totals,
+        activity=completed_activity(db),
+        history=finance_repo.payments_by_receivable(db),
         as_of_date=today,
+        cents_to_euros=cents_to_euros,
     )
 
 
@@ -49,10 +61,14 @@ def complete(booking_id: int | None = None):
             performed_date=performed,
             due_date=due,
         )
-        flash(f"Booking completed. Receivable #{receivable_id} created (fee snapshot frozen).", "ok")
-    except (OperationsError, FinanceError, ValueError, KeyError) as exc:
+        flash(
+            f"Procedure marked as done. Collection record #{receivable_id} now shows the amount due.",
+            "ok",
+        )
+    except (CompletionError, ValueError, KeyError) as exc:
         flash(str(getattr(exc, "reason", exc)), "error")
-    return redirect(url_for("finance.payments"))
+        return redirect(url_for("finance.payments"))
+    return redirect(url_for("finance.payments", _anchor=f"booking-{booking_id}"))
 
 
 @bp.post("/payments/record")
@@ -67,7 +83,7 @@ def record_payment():
             amount_cents=cents,
             paid_date=validate_iso_date(request.form["paid_date"]),
         )
-        flash(f"Payment recorded (id={payment_id}).", "ok")
+        flash(f"Payment saved (#{payment_id}). The status below is updated.", "ok")
     except (FinanceError, ValueError, KeyError) as exc:
         flash(str(getattr(exc, "reason", exc)), "error")
     return redirect(url_for("finance.payments"))
@@ -103,7 +119,6 @@ def _inputs_from_form() -> ScenarioInputs:
 def investment():
     db = get_db()
     example = example_guide_inputs()
-    preview = compare_scenario(example)
     saved = finance_repo.list_investment_scenarios(db)
     selected_id = request.args.get("id", type=int)
     selected = None
@@ -112,10 +127,18 @@ def investment():
             selected = finance_repo.get_investment_scenario(db, selected_id)
         except FinanceError as exc:
             flash(exc.reason, "error")
+
+    if selected:
+        values = selected["inputs"]
+        options = selected["outputs"]["options"]
+    else:
+        values = inputs_to_dict(example)
+        options = result_to_dict(compare_scenario(example))["options"]
     return render_template(
         "investment.html",
-        example=example,
-        preview=preview,
+        values=values,
+        options=options,
+        assumptions=compare_scenario(example).assumptions,
         saved=saved,
         selected=selected,
         cents_to_euros=cents_to_euros,

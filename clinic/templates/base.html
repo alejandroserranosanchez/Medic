@@ -7,29 +7,58 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-  <header class="top">
-    <div class="brand">{{ config.APP_NAME }}</div>
-    <p class="tag">Fictional clinic data · coursework local server</p>
-    <nav>
-      <a href="{{ url_for('overview') }}">Overview</a>
-      <a href="{{ url_for('operations.capacity') }}">Capacity</a>
-      <a href="{{ url_for('finance.payments') }}">Payments</a>
-      <a href="{{ url_for('finance.investment') }}">Investment</a>
+  {% set section = (request.endpoint or '').split('.')[-1] %}
+  <aside class="sidebar">
+    <a class="brand" href="{{ url_for('overview') }}">{{ config.APP_NAME|lower }}<span>.</span></a>
+    <div class="side-label">Clinic workspace</div>
+    <nav aria-label="Main navigation">
+      <a href="{{ url_for('overview') }}" class="{{ 'active' if section == 'overview' }}" {{ 'aria-current=page' if section == 'overview' }}>Overview</a>
+      <a href="{{ url_for('operations.capacity') }}" class="{{ 'active' if section == 'capacity' }}" {{ 'aria-current=page' if section == 'capacity' }}>Schedule</a>
+      <a href="{{ url_for('finance.payments') }}" class="{{ 'active' if section == 'payments' }}" {{ 'aria-current=page' if section == 'payments' }}>Collections</a>
     </nav>
-  </header>
+    <div class="side-label">Planning</div>
+    <nav aria-label="Planning">
+      <a href="{{ url_for('finance.investment') }}" class="{{ 'active' if section == 'investment' }}" {{ 'aria-current=page' if section == 'investment' }}>Equipment plans</a>
+    </nav>
+    <div class="side-bottom">All records are fictional</div>
+  </aside>
 
-  {% with messages = get_flashed_messages(with_categories=true) %}
-    {% if messages %}
-      <ul class="flash">
-        {% for category, message in messages %}
-          <li class="{{ category }}">{{ message }}</li>
-        {% endfor %}
-      </ul>
-    {% endif %}
-  {% endwith %}
+  <div class="workspace">
+    <header class="topbar">
+      <span class="top-left"><strong>Demo clinic</strong><span class="divider"></span>Clinic operations</span>
+      <span class="top-right">
+        <span class="demo-tag">Fictional demo</span>
+        <span>{{ 'Demo clock' if demo_clock else 'Now' }} · {{ clock_now.isoformat()|nice_datetime }}</span>
+      </span>
+    </header>
 
-  <main>
-    {% block content %}{% endblock %}
-  </main>
+    <main>
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <ul class="flash" role="status">
+            {% for category, message in messages %}
+              <li class="{{ category }}">{{ message }}</li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+      {% endwith %}
+
+      {% block content %}{% endblock %}
+
+      <footer class="footer">
+        <span>{{ config.APP_NAME }} · all records and figures are fictional</span>
+        <span>Manual decisions. Transparent rules.</span>
+      </footer>
+    </main>
+  </div>
+  <script>
+    // Open a disclosure when a link points at it (e.g. "+ Add waiting request").
+    function openTarget() {
+      var el = location.hash && document.getElementById(location.hash.slice(1));
+      if (el && el.tagName === "DETAILS") { el.open = true; }
+    }
+    window.addEventListener("hashchange", openTarget);
+    openTarget();
+  </script>
 </body>
 </html>

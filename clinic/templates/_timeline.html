@@ -1,0 +1,34 @@
+{# Session bar. Expects `item` from with_timeline() and optional `selected_start`. #}
+{% set s = item.session %}
+<div class="timeline" role="img" aria-label="{{ s.room_label }} {{ s.start_time }} to {{ s.end_time }}: {{ item.free_minutes }} minutes free">
+  {% for t in item.ticks %}<span class="tick" style="left: {{ t.left }}%">{{ t.label }}</span>{% endfor %}
+  {% for g in item.gap_blocks %}
+    {% if item.past %}
+    <span class="seg free unused" style="left: {{ g.left }}%; width: {{ g.width }}%" title="Unused {{ g.start }}–{{ g.end }}">
+      {% if g.width > 14 %}<strong>{{ g.start }}–{{ g.end }}</strong><span>Unused</span>{% endif %}
+    </span>
+    {% else %}
+    <a class="seg free {{ 'selected' if selected_start == g.start }}" style="left: {{ g.left }}%; width: {{ g.width }}%"
+       href="{{ url_for('operations.capacity', session=s.id, start=g.start) }}#match"
+       title="Free {{ g.start }}–{{ g.end }}: find a match">
+      {% if g.width > 14 %}<strong>{{ g.start }}–{{ g.end }}</strong><span>Free · find a match</span>{% else %}+{% endif %}
+    </a>
+    {% endif %}
+  {% endfor %}
+  {% for blk in item.blocks %}
+    {% set b = blk.booking %}
+    <span class="seg {{ 'done' if b.status == 'completed' else 'booked' }}" style="left: {{ blk.left }}%; width: {{ blk.width }}%"
+          title="{{ b.patient_ref }} {{ b.start_time }}–{{ b.end_time }}">
+      <strong>{{ b.patient_ref }}</strong>{% if blk.width > 12 %}<span>{{ 'Completed' if b.status == 'completed' else b.start_time ~ '–' ~ b.end_time }}</span>{% endif %}
+    </span>
+    {% if blk.turnover_width > 0 %}
+    <span class="seg clean" style="left: {{ blk.left + blk.width }}%; width: {{ blk.turnover_width }}%" title="Room turnaround until {{ blk.room_free }}"></span>
+    {% endif %}
+  {% endfor %}
+</div>
+<div class="legend">
+  <span><i class="l-done"></i>Completed</span>
+  <span><i class="l-booked"></i>Booked</span>
+  <span><i class="l-clean"></i>Room turnaround</span>
+  <span><i class="l-free"></i>Available</span>
+</div>

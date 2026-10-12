@@ -1,135 +1,136 @@
 {% extends "base.html" %}
 {% block content %}
-<section class="panel">
-  <h1>Investment</h1>
-  <p class="note">
-    Compare <strong>keep / buy / lease</strong> for one procedure type.
-    Throughput is <code>min(demand, staff, room, equipment)</code> procedures per month.
-    Figures are a simplified cash scenario — not accounting profit and not a recommendation.
-  </p>
-</section>
+{% set titles = {'keep': 'Keep current', 'buy': 'Buy new', 'lease': 'Lease new'} %}
+{% set limit_labels = {'demand': 'Demand', 'staff': 'Staff', 'room': 'Room', 'equipment': 'Equipment'} %}
+{% set ns = namespace(best='keep') %}
+{% for key in ['buy', 'lease'] %}
+  {% if options[key].horizon_net_cash_cents > options[ns.best].horizon_net_cash_cents %}{% set ns.best = key %}{% endif %}
+{% endfor %}
+{% set added = options.buy.procedures_per_month - options.keep.procedures_per_month %}
+{% set buy_limits %}{% for f in options.buy.limiting_factors %}{{ limit_labels.get(f, f) }}{{ ' and ' if not loop.last }}{% endfor %}{% endset %}
 
-<section class="panel">
-  <h2>Guide example (preview, not yet saved)</h2>
-  <p class="note">{{ example.name }} · {{ example.procedure_code }} · {{ example.months }} months · demand {{ example.monthly_demand }}/month</p>
-  <table>
-    <thead>
-      <tr>
-        <th>Option</th>
-        <th>Procedures/month</th>
-        <th>Limiting factor(s)</th>
-        <th>Horizon net cash</th>
-        <th>vs keep</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for key in ['keep', 'buy', 'lease'] %}
-      {% set o = preview.options[key] %}
-      <tr>
-        <td>{{ key }}</td>
-        <td>{{ o.procedures_per_month }}</td>
-        <td>{{ o.limiting_factors|join(', ') }}</td>
-        <td>{{ cents_to_euros(o.horizon_net_cash_cents) }} €</td>
-        <td>{% if key == 'keep' %}—{% else %}{{ cents_to_euros(o.incremental_vs_keep_cents) }} €{% endif %}</td>
-      </tr>
+<div class="pagehead">
+  <div>
+    <div class="eyebrow">Planning · {{ 'saved scenario' if selected else 'example scenario' }}</div>
+    <h1>Would another device help?</h1>
+    <p>Compare equipment options against the capacity your team can deliver.</p>
+  </div>
+  <a class="btn" href="#assumptions-form">Edit assumptions</a>
+</div>
+
+<div class="summary-banner">
+  <div>
+    <h2>
+      {% if added > 0 %}More equipment adds {{ added }} procedure{{ 's' if added != 1 }} a month.
+      {% else %}More equipment adds no procedures a month.{% endif %}
+    </h2>
+    <p>
+      {{ buy_limits }} {{ 'then becomes' if added > 0 else 'already is' }} the limit.
+      {{ titles[ns.best] }} has the highest modeled cash result over {{ values.months }} months.
+    </p>
+  </div>
+</div>
+
+<div class="scenario-cards">
+  {% for key in ['keep', 'buy', 'lease'] %}
+  {% set o = options[key] %}
+  {% set v = values[key] %}
+  <article class="card option {{ 'best' if key == ns.best }}">
+    <div class="option-head">
+      <h3>{{ titles[key] }}</h3>
+      {% if key == ns.best %}<span class="pill green">Highest in this model</span>{% endif %}
+    </div>
+    <div class="big">{{ o.horizon_net_cash_cents|eur }}</div>
+    <small class="muted">Modeled net cash · {{ values.months }} months</small>
+    <div class="delta {{ 'down' if o.incremental_vs_keep_cents < 0 else 'up' if o.incremental_vs_keep_cents > 0 }}">
+      {% if key == 'keep' %}Baseline for comparison{% else %}{{ '+' if o.incremental_vs_keep_cents > 0 }}{{ o.incremental_vs_keep_cents|eur }} compared with keeping{% endif %}
+    </div>
+    <div class="detail-line"><span>Procedures / month</span><strong>{{ o.procedures_per_month }}</strong></div>
+    <div class="detail-line"><span>Monthly modeled cash</span><strong>{{ o.monthly_cash_flow_cents|eur }}</strong></div>
+    <div class="detail-line"><span>Upfront cost</span><strong>{{ v.upfront_equipment_cash_cost_cents|eur }}</strong></div>
+    <div class="capacityline">
+      <div class="detail-line">
+        <span>Limiting capacity</span>
+        <span>{% for f in o.limiting_factors %}<span class="pill {{ 'gray' if key == 'keep' else 'amber' }}">{{ limit_labels.get(f, f) }}</span> {% endfor %}</span>
+      </div>
+      <p class="metric-explain">Equipment allows {{ v.equipment_capacity }}/month; {{ v.monthly_equipment_cash_cost_cents|eur }}/month equipment cost.</p>
+    </div>
+  </article>
+  {% endfor %}
+</div>
+
+<article class="card assumptions">
+  <div class="cardhead">
+    <div>
+      <h2>What this comparison assumes</h2>
+      <p>{{ values.name }} · {{ values.procedure_code }} · manually entered inputs</p>
+    </div>
+  </div>
+  <div class="padded">
+    <div class="assumptionstrip">
+      <div><small>Monthly demand</small><strong>{{ values.monthly_demand }} procedures</strong></div>
+      <div><small>Staff capacity</small><strong>{{ values.keep.staffed_capacity }} / month</strong></div>
+      <div><small>Room capacity</small><strong>{{ values.keep.room_capacity }} / month</strong></div>
+      <div><small>Expected receipt</small><strong>{{ values.expected_receipt_cents|eur }} / procedure</strong></div>
+      <div><small>Variable cost</small><strong>{{ values.variable_cost_cents|eur }} / procedure</strong></div>
+    </div>
+    <details>
+      <summary>Equipment costs and model limits</summary>
+      <ul class="history">
+        {% for key in ['keep', 'buy', 'lease'] %}{% set v = values[key] %}
+        <li>{{ titles[key] }}: equipment {{ v.equipment_capacity }}/month, staff {{ v.staffed_capacity }}, room {{ v.room_capacity }}, upfront {{ v.upfront_equipment_cash_cost_cents|eur }}, equipment {{ v.monthly_equipment_cash_cost_cents|eur }}/month, extra staff {{ v.additional_monthly_staff_cost_cents|eur }}/month.</li>
+        {% endfor %}
+        {% for a in assumptions %}<li>{{ a }}</li>{% endfor %}
+      </ul>
+    </details>
+  </div>
+</article>
+
+<details class="card disclosure" id="assumptions-form">
+  <summary>Edit assumptions and save as a scenario</summary>
+  <form method="post" action="{{ url_for('finance.investment_save') }}">
+    <div class="form-grid">
+      <label class="field">Scenario name <input name="name" required value="{{ values.name }}"></label>
+      <label class="field">Procedure code <input name="procedure_code" required value="{{ values.procedure_code }}"></label>
+      <label class="field">Horizon (months, 1–60) <input name="months" type="number" min="1" max="60" required value="{{ values.months }}"></label>
+      <label class="field">Monthly demand <input name="monthly_demand" type="number" min="0" required value="{{ values.monthly_demand }}"></label>
+      <label class="field">Expected receipt (€) <input name="expected_receipt_eur" required value="{{ cents_to_euros(values.expected_receipt_cents) }}"></label>
+      <label class="field">Variable cost (€) <input name="variable_cost_eur" required value="{{ cents_to_euros(values.variable_cost_cents) }}"></label>
+    </div>
+    <div class="option-cols">
+      {% for key in ['keep', 'buy', 'lease'] %}{% set v = values[key] %}
+      <fieldset>
+        <legend>{{ titles[key] }}</legend>
+        <label class="field">Staff capacity / month <input name="{{ key }}_staff" type="number" min="0" required value="{{ v.staffed_capacity }}"></label>
+        <label class="field">Room capacity / month <input name="{{ key }}_room" type="number" min="0" required value="{{ v.room_capacity }}"></label>
+        <label class="field">Equipment capacity / month <input name="{{ key }}_equipment" type="number" min="0" required value="{{ v.equipment_capacity }}"></label>
+        <label class="field">Extra staff (€/month) <input name="{{ key }}_extra_staff_eur" required value="{{ cents_to_euros(v.additional_monthly_staff_cost_cents) }}"></label>
+        <label class="field">Maintenance or lease (€/month) <input name="{{ key }}_monthly_equip_eur" required value="{{ cents_to_euros(v.monthly_equipment_cash_cost_cents) }}"></label>
+        <label class="field">Upfront (€) <input name="{{ key }}_upfront_eur" required value="{{ cents_to_euros(v.upfront_equipment_cash_cost_cents) }}"></label>
+      </fieldset>
       {% endfor %}
-    </tbody>
-  </table>
-  <ul class="note">
-    {% for a in preview.assumptions %}
-    <li>{{ a }}</li>
-    {% endfor %}
-  </ul>
-</section>
-
-<section class="panel">
-  <h2>Save a scenario</h2>
-  <p class="note">Defaults match the guide example. Saving stores JSON snapshots of inputs and outputs.</p>
-  <form method="post" action="{{ url_for('finance.investment_save') }}" class="form-grid">
-    <label>Name <input name="name" required value="{{ example.name }}"></label>
-    <label>Procedure code <input name="procedure_code" required value="{{ example.procedure_code }}"></label>
-    <label>Months (1–60) <input name="months" type="number" min="1" max="60" required value="{{ example.months }}"></label>
-    <label>Monthly demand <input name="monthly_demand" type="number" min="0" required value="{{ example.monthly_demand }}"></label>
-    <label>Expected receipt (EUR) <input name="expected_receipt_eur" required value="120.00"></label>
-    <label>Variable cost (EUR) <input name="variable_cost_eur" required value="25.00"></label>
-
-    <h3 style="grid-column:1/-1;margin:0.5rem 0 0">Keep</h3>
-    <label>Staff cap <input name="keep_staff" type="number" min="0" required value="{{ example.keep.staffed_capacity }}"></label>
-    <label>Room cap <input name="keep_room" type="number" min="0" required value="{{ example.keep.room_capacity }}"></label>
-    <label>Equipment cap <input name="keep_equipment" type="number" min="0" required value="{{ example.keep.equipment_capacity }}"></label>
-    <label>Extra staff €/mo <input name="keep_extra_staff_eur" required value="0.00"></label>
-    <label>Equip cash €/mo <input name="keep_monthly_equip_eur" required value="0.00"></label>
-    <label>Upfront € <input name="keep_upfront_eur" required value="0.00"></label>
-
-    <h3 style="grid-column:1/-1;margin:0.5rem 0 0">Buy</h3>
-    <label>Staff cap <input name="buy_staff" type="number" min="0" required value="{{ example.buy.staffed_capacity }}"></label>
-    <label>Room cap <input name="buy_room" type="number" min="0" required value="{{ example.buy.room_capacity }}"></label>
-    <label>Equipment cap <input name="buy_equipment" type="number" min="0" required value="{{ example.buy.equipment_capacity }}"></label>
-    <label>Extra staff €/mo <input name="buy_extra_staff_eur" required value="0.00"></label>
-    <label>Equip cash €/mo <input name="buy_monthly_equip_eur" required value="50.00"></label>
-    <label>Upfront € <input name="buy_upfront_eur" required value="5000.00"></label>
-
-    <h3 style="grid-column:1/-1;margin:0.5rem 0 0">Lease</h3>
-    <label>Staff cap <input name="lease_staff" type="number" min="0" required value="{{ example.lease.staffed_capacity }}"></label>
-    <label>Room cap <input name="lease_room" type="number" min="0" required value="{{ example.lease.room_capacity }}"></label>
-    <label>Equipment cap <input name="lease_equipment" type="number" min="0" required value="{{ example.lease.equipment_capacity }}"></label>
-    <label>Extra staff €/mo <input name="lease_extra_staff_eur" required value="0.00"></label>
-    <label>Equip cash €/mo <input name="lease_monthly_equip_eur" required value="300.00"></label>
-    <label>Upfront € <input name="lease_upfront_eur" required value="0.00"></label>
-
-    <button type="submit">Calculate &amp; save</button>
+    </div>
+    <button type="submit" class="btn primary">Calculate &amp; save</button>
   </form>
-</section>
+</details>
 
-<section class="panel">
-  <h2>Saved scenarios</h2>
-  <table>
-    <thead>
-      <tr><th>ID</th><th>Name</th><th>Proc</th><th>Created</th><th>Model</th><th></th></tr>
-    </thead>
-    <tbody>
+<article class="card">
+  <div class="cardhead"><h2>Saved scenarios</h2>{% if selected %}<a class="textlink" href="{{ url_for('finance.investment') }}">Back to example →</a>{% endif %}</div>
+  <div class="padded">
+    {% if saved %}
+    <div class="rows">
       {% for s in saved %}
-      <tr>
-        <td>{{ s.id }}</td>
-        <td>{{ s.name }}</td>
-        <td>{{ s.procedure_code }}</td>
-        <td>{{ s.created_at }}</td>
-        <td>{{ s.model_version }}</td>
-        <td><a href="{{ url_for('finance.investment', id=s.id) }}">Open</a></td>
-      </tr>
-      {% else %}
-      <tr><td colspan="6">No saved scenarios yet.</td></tr>
+      <div class="row">
+        <div><strong>{{ s.name }}</strong><p>{{ s.procedure_code }} · saved {{ s.created_at|nice_datetime }}</p></div>
+        {% if selected and selected.id == s.id %}<span class="pill teal">Open</span>{% else %}<a class="textlink" href="{{ url_for('finance.investment', id=s.id) }}">Open →</a>{% endif %}
+      </div>
       {% endfor %}
-    </tbody>
-  </table>
-</section>
+    </div>
+    {% else %}
+    <p class="empty">Nothing saved yet.</p>
+    {% endif %}
+  </div>
+</article>
 
-{% if selected %}
-<section class="panel">
-  <h2>Opened scenario #{{ selected.id }}</h2>
-  <p class="note">Showing frozen snapshots (not recalculated from today’s fee catalogue).</p>
-  <p><strong>{{ selected.name }}</strong> · {{ selected.procedure_code }} · saved {{ selected.created_at }} · model {{ selected.model_version }}</p>
-  <table>
-    <thead>
-      <tr><th>Option</th><th>Procedures/month</th><th>Limits</th><th>Horizon</th><th>vs keep</th></tr>
-    </thead>
-    <tbody>
-      {% for key in ['keep', 'buy', 'lease'] %}
-      {% set o = selected.outputs.options[key] %}
-      <tr>
-        <td>{{ key }}</td>
-        <td>{{ o.procedures_per_month }}</td>
-        <td>{{ o.limiting_factors|join(', ') }}</td>
-        <td>{{ cents_to_euros(o.horizon_net_cash_cents) }} €</td>
-        <td>{% if key == 'keep' %}—{% else %}{{ cents_to_euros(o.incremental_vs_keep_cents) }} €{% endif %}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  <details>
-    <summary>Raw input snapshot</summary>
-    <pre>{{ selected.inputs | tojson(indent=2) }}</pre>
-  </details>
-</section>
-{% endif %}
+<p class="metric-explain">This planning scenario uses its {{ 'saved' if selected else 'example' }} inputs. It is not automatically derived from the daily schedule or collection history.</p>
 {% endblock %}

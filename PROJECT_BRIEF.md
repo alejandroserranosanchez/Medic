@@ -45,7 +45,7 @@ Operations does not import finance, and finance does not import operations. `cli
 
 ## Exclusions
 
-- No Dockerfile, Compose, CI workflows, or IaC authored for this assignment.
+- The Dockerfile is the provided Assignment 1 template with its four marked lines filled (added 22 October 2026). No Compose file, CI workflow, or infrastructure-as-code is authored for this assignment.
 - No public deployment, external managed DB/cache/queue, Redis, Celery, or microservices.
 - No real patient data, diagnosis, payment processing, or hospital/insurer integrations.
 - No claim that simplified session rules prove clinical feasibility.

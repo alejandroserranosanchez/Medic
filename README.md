@@ -42,7 +42,26 @@ Open `http://127.0.0.1:8000` (the server binds `0.0.0.0`). No interactive setup:
 | `SECRET_KEY` | `medic-dev-only` | Flask flash messages |
 | `DEMO_NOW` | *(unset = real clock)* | Fixed planning clock, format `YYYY-MM-DDTHH:MM:SS` |
 
-Database path: `DATA_DIR/clinic.sqlite3`. Seed data is inserted only when the database is empty, so restarting never wipes your data.
+Database path: `DATA_DIR/clinic.sqlite3`. Seed data is inserted only when `procedure_types` is empty, so a later start does not insert the demo rows again and does not delete bookings added from the forms.
+
+## Run in the provided container
+
+`Dockerfile` is the Assignment 1 template with its four marked lines filled: `python:3.12-slim`, install `requirements.txt`, copy `app.py` and `clinic/`, and start `python app.py`. The template sets `DATA_DIR=/data`. Docker Desktop must be running.
+
+```bash
+docker build -t medic .
+docker run --rm -p 8000:8000 -v medic-data:/data medic
+```
+
+Open `http://localhost:8000`. Inside the container the database file is `/data/clinic.sqlite3`, on the volume `medic-data`. On the laptop, with `DATA_DIR` unset, the file is `data/clinic.sqlite3` in the project. Those are different folders.
+
+A local start on 22 October 2026 built the image, answered HTTP 200, and created `/data/clinic.sqlite3`. The graded checker is still to be pasted here:
+
+```bash
+./container/run.sh /path/to/Medic
+```
+
+Run that from a clone of the professor's `sdd-assignment-1` repository. The passing output belongs under this heading.
 
 ## Testing and coverage
 
@@ -80,4 +99,4 @@ Result: `53 passed`.
 ## Assignment notes
 
 - Single process, one SQLite file, one root `requirements.txt`
-- No Docker / CI / IaC in this assignment
+- The Dockerfile is the provided template with its four marked lines filled. No Compose file, CI workflow, or infrastructure-as-code is part of this submission.

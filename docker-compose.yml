@@ -1,7 +1,7 @@
-# Assignment 2, first local step.
-# This starts SQL Server and creates the two empty databases.
-# It does not start Operations, Finance, or the clinic UI.
-# The current Flask app still uses SQLite and is run with python app.py.
+# Local Assignment 2 stack.
+# SQL Server holds the operations and finance databases.
+# The two services below only answer /health. They do not run the clinic.
+# The original Flask app still uses SQLite and is started with python app.py.
 
 name: medic
 
@@ -72,6 +72,26 @@ services:
           -v OPERATIONS_DB_PASSWORD="$$OPERATIONS_DB_PASSWORD" \
           -v FINANCE_DB_PASSWORD="$$FINANCE_DB_PASSWORD"
     restart: "no"
+
+  operations:
+    build: ./services/operations
+    depends_on:
+      sql-init:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: mssql://operations_user:${OPERATIONS_DB_PASSWORD}@sqlserver:1433/operations
+    ports:
+      - "8001:8000"
+
+  finance:
+    build: ./services/finance
+    depends_on:
+      sql-init:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: mssql://finance_user:${FINANCE_DB_PASSWORD}@sqlserver:1433/finance
+    ports:
+      - "8002:8000"
 
 volumes:
   medic-sql-data:

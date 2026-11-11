@@ -65,7 +65,11 @@ Run that from a clone of the professor's `sdd-assignment-1` repository. The pass
 
 ## Local SQL Server for Assignment 2
 
-This Compose file starts one SQL Server container and creates two empty databases, `operations` and `finance`. It does not start the clinic. The Flask app still uses SQLite.
+This Compose file starts SQL Server, creates the `operations` and `finance` databases, and starts a small service for each. Those services only answer `GET /health`. They do not schedule bookings or record payments. The original clinic still uses SQLite:
+
+```bash
+python app.py
+```
 
 On an Apple Silicon Mac, enable Rosetta emulation in Docker Desktop. The image is `linux/amd64`.
 
@@ -84,6 +88,21 @@ The first start downloads SQL Server, which can take several minutes. `db/init.s
 `docker compose down` stops the containers and keeps the volume. `docker compose down -v` deletes the volume and the databases with it.
 
 The administrator password is only for this local server and the init script. `operations_user` can use `operations`. `finance_user` can use `finance`. Neither login is a user in the other database.
+
+Operations is published on port 8001 and Finance on port 8002. Inside Compose they call SQL Server by the name `sqlserver`, not `localhost`.
+
+```bash
+curl http://127.0.0.1:8001/health
+curl http://127.0.0.1:8002/health
+```
+
+Service checks, from each service folder:
+
+```bash
+pip install -r requirements.txt -r requirements-dev.txt
+ruff check .
+pytest
+```
 
 ## Testing and coverage
 

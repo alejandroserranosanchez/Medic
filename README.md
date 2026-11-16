@@ -89,11 +89,14 @@ The first start downloads SQL Server, which can take several minutes. `db/init.s
 
 The administrator password is only for this local server and the init script. `operations_user` can use `operations`. `finance_user` can use `finance`. Neither login is a user in the other database.
 
-Operations is published on port 8001 and Finance on port 8002. Inside Compose they call SQL Server by the name `sqlserver`, not `localhost`.
+Operations is published on port 8001 and Finance on port 8002. Inside Compose they call SQL Server by the name `sqlserver`, not `localhost`. When the Operations container starts, it applies `services/operations/migrations/001_sessions.sql` once and records that file in its own database. A second start does not run it again. The migration creates clinicians and sessions. It does not create bookings or payments.
 
 ```bash
 curl http://127.0.0.1:8001/health
 curl http://127.0.0.1:8002/health
+curl -X POST http://127.0.0.1:8001/sessions \
+  -H 'Content-Type: application/json' \
+  -d '{"room_label":"Room A","clinician_label":"Dr. Vega","session_date":"2026-11-20","start_time":"09:00","end_time":"12:00"}'
 ```
 
 Service checks, from each service folder:

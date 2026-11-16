@@ -10,11 +10,12 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Only the application code, never the whole repository.
+# Only the application code and its migrations, never the whole repository.
 COPY app/ app/
+COPY migrations/ migrations/
 
 RUN useradd --system --no-create-home appuser
 USER appuser
 
 EXPOSE 8000
-CMD ["flask", "--app", "app.main:app", "run", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python", "-m", "app.main"]

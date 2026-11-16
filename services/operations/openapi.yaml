@@ -1,0 +1,141 @@
+openapi: 3.0.3
+info:
+  title: Medic Operations
+  version: 0.2.0
+  description: Sessions for the clinic. Bookings and payments are not in this service yet.
+paths:
+  /health:
+    get:
+      summary: Report whether this service can read its own database.
+      responses:
+        "200":
+          description: The operations database answered.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+        "503":
+          description: The operations database did not answer.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+  /sessions:
+    get:
+      summary: List saved sessions.
+      responses:
+        "200":
+          description: The sessions in this service's database.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Session"
+    post:
+      summary: Create a session when the room and clinician are free.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewSession"
+      responses:
+        "201":
+          description: The session was saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "400":
+          description: The date, time, or another field is not usable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: The clinician does not exist.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: The room or clinician is already booked for that time.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /sessions/{id}:
+    get:
+      summary: Fetch one session.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: The session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "404":
+          description: No session has that id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+components:
+  schemas:
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok, unavailable]
+    NewSession:
+      type: object
+      required: [room_label, session_date, start_time, end_time]
+      properties:
+        room_label:
+          type: string
+        clinician_id:
+          type: integer
+        clinician_label:
+          type: string
+        session_date:
+          type: string
+          format: date
+        start_time:
+          type: string
+          example: "09:00"
+        end_time:
+          type: string
+          example: "12:00"
+    Session:
+      type: object
+      required: [id, room_label, clinician_id, clinician_label, session_date, start_time, end_time]
+      properties:
+        id:
+          type: integer
+        room_label:
+          type: string
+        clinician_id:
+          type: integer
+        clinician_label:
+          type: string
+        session_date:
+          type: string
+        start_time:
+          type: string
+        end_time:
+          type: string
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string

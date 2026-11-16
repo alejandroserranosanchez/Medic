@@ -23,7 +23,26 @@ jobs:
           cache-dependency-path: services/${{ matrix.service }}/requirements*.txt
       - run: pip install -r requirements.txt -r requirements-dev.txt
       - run: ruff check .
-      - run: pytest
+      - run: pytest --cov=app --cov-report=term-missing --cov-fail-under=70
+    services:
+      sqlserver:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: "Y"
+          MSSQL_SA_PASSWORD: CiOnlySaPass1
+        ports:
+          - 1433:1433
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P CiOnlySaPass1 -Q 'SELECT 1'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 20
+          --health-start-period 30s
+    env:
+      MSSQL_SA_PASSWORD: CiOnlySaPass1
+      OPERATIONS_DB_PASSWORD: CiOnlyOpsPass1
+      SQL_HOST: localhost
+      SQL_PORT: "1433"
 
   images:
     needs: test
@@ -49,5 +68,8 @@ jobs:
           context: services/${{ matrix.service }}
           push: ${{ github.ref == 'refs/heads/main' }}
           tags: ghcr.io/${{ env.OWNER }}/medic-${{ matrix.service }}:${{ github.sha }}
+          # A pull request token cannot write the cache. Write it only on main.
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-to: ${{ github.ref == 'refs/heads/main' && 'type=gha,mode=max' || '' }}
+          # A plain image. The attestation wrapper is often rejected by Azure Container Apps.
+          provenance: false

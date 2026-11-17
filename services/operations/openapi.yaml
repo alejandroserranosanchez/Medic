@@ -1,8 +1,8 @@
 openapi: 3.0.3
 info:
   title: Medic Operations
-  version: 0.2.0
-  description: Sessions for the clinic. Bookings and payments are not in this service yet.
+  version: 0.3.0
+  description: Sessions and bookings for the clinic. Payments are not in this service yet.
 paths:
   /health:
     get:
@@ -87,6 +87,41 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /bookings:
+    post:
+      summary: Book one procedure inside an existing session.
+      description: The end time is calculated from the clinician profile or the procedure catalogue.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewBooking"
+      responses:
+        "201":
+          description: The booking was saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Booking"
+        "400":
+          description: The input is invalid, the procedure is unknown, or the slot does not fit.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: The session does not exist.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: The booking overlaps another booking, including room turnover.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 components:
   schemas:
     Health:
@@ -133,6 +168,91 @@ components:
           type: string
         end_time:
           type: string
+    NewBooking:
+      type: object
+      required:
+        - session_id
+        - start_time
+        - patient_ref
+        - procedure_code
+        - priority
+        - ready
+        - available_from
+        - available_to
+        - minimum_notice_minutes
+      properties:
+        session_id:
+          type: integer
+        start_time:
+          type: string
+          example: "09:00"
+        patient_ref:
+          type: string
+        procedure_code:
+          type: string
+          example: GASTRO
+        priority:
+          type: integer
+        ready:
+          type: boolean
+        available_from:
+          type: string
+          example: "2099-01-01T00:00:00"
+        available_to:
+          type: string
+          example: "2099-01-02T00:00:00"
+        minimum_notice_minutes:
+          type: integer
+        requested_at:
+          type: string
+    Booking:
+      type: object
+      required:
+        - id
+        - request_id
+        - session_id
+        - patient_ref
+        - procedure_code
+        - start_time
+        - end_time
+        - status
+        - timing_source
+        - estimated_duration_minutes
+        - variability_minutes
+        - min_planning_minutes
+        - planning_block_minutes
+        - room_turnover_minutes
+      properties:
+        id:
+          type: integer
+        request_id:
+          type: integer
+        session_id:
+          type: integer
+        patient_ref:
+          type: string
+        procedure_code:
+          type: string
+        start_time:
+          type: string
+        end_time:
+          type: string
+        status:
+          type: string
+          enum: [active, cancelled, completed]
+        timing_source:
+          type: string
+          enum: [profile, catalogue]
+        estimated_duration_minutes:
+          type: integer
+        variability_minutes:
+          type: integer
+        min_planning_minutes:
+          type: integer
+        planning_block_minutes:
+          type: integer
+        room_turnover_minutes:
+          type: integer
     Error:
       type: object
       required: [error]

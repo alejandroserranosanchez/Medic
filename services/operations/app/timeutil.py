@@ -7,7 +7,7 @@ Canonical clock times are HH:MM.
 from __future__ import annotations
 
 import re
-from datetime import date
+from datetime import date, datetime
 
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _TIME_RE = re.compile(r"^(\d{1,2}):(\d{2})$")
@@ -35,9 +35,33 @@ def normalize_hhmm(value: str) -> str:
     return format_hhmm(parse_hhmm(value))
 
 
+def add_minutes_hhmm(start_hhmm: str, minutes: int) -> str:
+    total = parse_hhmm(start_hhmm) + minutes
+    if total >= 24 * 60:
+        raise ValueError("booking crosses midnight; same-day sessions only in this version")
+    return format_hhmm(total)
+
+
 def intervals_overlap(start_a: int, end_a: int, start_b: int, end_b: int) -> bool:
     """Half-open overlap: [start, end). Touching endpoints do not conflict."""
     return start_a < end_b and start_b < end_a
+
+
+def parse_datetime_local(value: str) -> datetime:
+    """Parse YYYY-MM-DDTHH:MM[:SS] as a clinic-local time."""
+    text = value.strip().replace(" ", "T")
+    for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M"):
+        try:
+            return datetime.strptime(text, fmt)
+        except ValueError:
+            continue
+    raise ValueError(f"invalid datetime: {value!r}")
+
+
+def combine_date_time(session_date: str, hhmm: str) -> datetime:
+    booked = date.fromisoformat(validate_iso_date(session_date))
+    minutes = parse_hhmm(hhmm)
+    return datetime(booked.year, booked.month, booked.day, minutes // 60, minutes % 60)
 
 
 def validate_iso_date(value: str) -> str:

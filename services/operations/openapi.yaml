@@ -6,7 +6,7 @@ info:
 paths:
   /health:
     get:
-      summary: Report whether this service can read its own database.
+      summary: Report whether this service can read and write its own database.
       responses:
         "200":
           description: The operations database answered.
@@ -131,6 +131,12 @@ components:
         status:
           type: string
           enum: [ok, unavailable]
+        db:
+          type: string
+          enum: [ok]
+        version:
+          type: string
+          description: Git SHA baked into the image. Local runs use unknown when GIT_SHA is unset.
     NewSession:
       type: object
       required: [room_label, session_date, start_time, end_time]

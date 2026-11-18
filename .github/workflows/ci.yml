@@ -67,6 +67,7 @@ jobs:
         with:
           context: services/${{ matrix.service }}
           push: ${{ github.ref == 'refs/heads/main' }}
+          build-args: GIT_SHA=${{ github.sha }}
           tags: ghcr.io/${{ env.OWNER }}/medic-${{ matrix.service }}:${{ github.sha }}
           # A pull request token cannot write the cache. Write it only on main.
           cache-from: type=gha

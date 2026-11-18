@@ -65,7 +65,7 @@ Run that from a clone of the professor's `sdd-assignment-1` repository. The pass
 
 ## Local SQL Server for Assignment 2
 
-This Compose file starts SQL Server, creates the `operations` and `finance` databases, and starts a small service for each. Those services only answer `GET /health`. They do not schedule bookings or record payments. The original clinic still uses SQLite:
+This Compose file starts SQL Server, creates the `operations` and `finance` databases, and starts a small service for each. Operations answers health, sessions, and bookings. Finance answers health. Payments stay in the original clinic, which still uses SQLite:
 
 ```bash
 python app.py
@@ -89,7 +89,7 @@ The first start downloads SQL Server, which can take several minutes. `db/init.s
 
 The administrator password is only for this local server and the init script. `operations_user` can use `operations`. `finance_user` can use `finance`. Neither login is a user in the other database.
 
-Operations is published on port 8001 and Finance on port 8002. Inside Compose they call SQL Server by the name `sqlserver`, not `localhost`. When the Operations container starts, it applies `services/operations/migrations/001_sessions.sql` once and records that file in its own database. A second start does not run it again. The migration creates clinicians and sessions. It does not create bookings or payments.
+Operations is published on port 8001 and Finance on port 8002. Inside Compose they call SQL Server by the name `sqlserver`, not `localhost`. When the Operations container starts, it applies `001_sessions.sql` and `002_bookings.sql` once and records each filename. A second start skips both. `GET /health` reads and writes that service's own database and returns `{"status":"ok","db":"ok","version":"<git sha>"}`. The image receives the SHA as `GIT_SHA`. A local build without that value returns `unknown`.
 
 ```bash
 curl http://127.0.0.1:8001/health

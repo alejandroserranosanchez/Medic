@@ -1,0 +1,37 @@
+openapi: 3.0.3
+info:
+  title: Medic Finance
+  version: 0.1.0
+  description: Health for the finance database. Receivables and payments are not in this service yet.
+paths:
+  /health:
+    get:
+      summary: Report whether this service can read and write its own database.
+      responses:
+        "200":
+          description: The finance database accepted a write and a read.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+        "503":
+          description: The finance database did not answer.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+components:
+  schemas:
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok, unavailable]
+        db:
+          type: string
+          enum: [ok]
+        version:
+          type: string
+          description: Git SHA baked into the image. Local runs use unknown when GIT_SHA is unset.

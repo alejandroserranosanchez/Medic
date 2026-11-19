@@ -1,0 +1,244 @@
+# Deploy the two published images into the existing student environment.
+# Run it by hand from main. It does not build an image and does not create a new environment.
+
+name: Deploy Azure
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-azure
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  IMAGE_SHA: 4b95e68a9ccf6e36797d0a1c7da287ff2e35ea16
+  RESOURCE_GROUP: rg-aserrano
+  CONTAINER_APPS_ENVIRONMENT: aserrano-ieu2024-env
+  OPERATIONS_APP: aserrano-ieu2024-operations
+  FINANCE_APP: aserrano-ieu2024-finance
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse a deployment that is not from main
+        shell: bash
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "Refusing deployment. Run this workflow from main."
+            exit 1
+          fi
+
+      - name: Sign in to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy both apps and check their health
+        shell: bash
+        env:
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          OPERATIONS_DATABASE_URL: ${{ secrets.OPERATIONS_DATABASE_URL }}
+          FINANCE_DATABASE_URL: ${{ secrets.FINANCE_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+
+          if ! command -v az >/dev/null 2>&1; then
+            echo "Azure CLI is not available on this runner."
+            exit 1
+          fi
+          if ! command -v jq >/dev/null 2>&1; then
+            echo "jq is not available on this runner."
+            exit 1
+          fi
+
+          signed_in="$(az account show --query id --output tsv)"
+          if [ "$signed_in" != "$AZURE_SUBSCRIPTION_ID" ]; then
+            echo "Refusing deployment. The signed-in subscription is not the expected student subscription."
+            exit 1
+          fi
+          if [ -z "${OPERATIONS_DATABASE_URL}" ] || [ -z "${FINANCE_DATABASE_URL}" ]; then
+            echo "A database URL secret is missing."
+            exit 1
+          fi
+
+          operations_image="ghcr.io/alejandroserranosanchez/medic-operations:${IMAGE_SHA}"
+          finance_image="ghcr.io/alejandroserranosanchez/medic-finance:${IMAGE_SHA}"
+
+          az containerapp env show \
+            --name "$CONTAINER_APPS_ENVIRONMENT" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query name \
+            --output none
+
+          deploy_app() {
+            local name="$1"
+            local image="$2"
+            local database_url="$3"
+
+            if az containerapp show \
+              --name "$name" \
+              --resource-group "$RESOURCE_GROUP" \
+              --query name \
+              --output tsv >/dev/null 2>&1; then
+              az containerapp secret set \
+                --name "$name" \
+                --resource-group "$RESOURCE_GROUP" \
+                --secrets "database-url=${database_url}" \
+                --output none
+              az containerapp update \
+                --name "$name" \
+                --resource-group "$RESOURCE_GROUP" \
+                --image "$image" \
+                --cpu 0.25 \
+                --memory 0.5Gi \
+                --min-replicas 0 \
+                --max-replicas 1 \
+                --set-env-vars "DATABASE_URL=secretref:database-url" \
+                --output none
+            else
+              az containerapp create \
+                --name "$name" \
+                --resource-group "$RESOURCE_GROUP" \
+                --environment "$CONTAINER_APPS_ENVIRONMENT" \
+                --image "$image" \
+                --cpu 0.25 \
+                --memory 0.5Gi \
+                --min-replicas 0 \
+                --max-replicas 1 \
+                --ingress external \
+                --target-port 8000 \
+                --secrets "database-url=${database_url}" \
+                --env-vars "DATABASE_URL=secretref:database-url" \
+                --output none
+            fi
+
+            az containerapp ingress enable \
+              --name "$name" \
+              --resource-group "$RESOURCE_GROUP" \
+              --type external \
+              --target-port 8000 \
+              --output none
+          }
+
+          field() {
+            local name="$1"
+            local query="$2"
+            az containerapp show \
+              --name "$name" \
+              --resource-group "$RESOURCE_GROUP" \
+              --query "$query" \
+              --output tsv
+          }
+
+          verify_app() {
+            local name="$1"
+            local image="$2"
+            local app_id environment_id actual_image min_replicas max_replicas external port secret_ref plain_value workload fqdn
+
+            app_id="$(field "$name" id)"
+            environment_id="$(field "$name" properties.environmentId)"
+            actual_image="$(field "$name" 'properties.template.containers[0].image')"
+            min_replicas="$(field "$name" properties.template.scale.minReplicas)"
+            max_replicas="$(field "$name" properties.template.scale.maxReplicas)"
+            external="$(field "$name" properties.configuration.ingress.external)"
+            port="$(field "$name" properties.configuration.ingress.targetPort)"
+            secret_ref="$(field "$name" "properties.template.containers[0].env[?name=='DATABASE_URL'].secretRef | [0]")"
+            plain_value="$(field "$name" "properties.template.containers[0].env[?name=='DATABASE_URL'].value | [0]")"
+            workload="$(field "$name" properties.workloadProfileName)"
+            fqdn="$(field "$name" properties.configuration.ingress.fqdn)"
+
+            if [ -z "$environment_id" ] || [ "$environment_id" = "null" ]; then
+              environment_id="$(field "$name" properties.managedEnvironmentId)"
+            fi
+            if [ "$plain_value" = "null" ] || [ "$plain_value" = "None" ]; then
+              plain_value=""
+            fi
+            if [ "$workload" = "null" ] || [ "$workload" = "None" ]; then
+              workload=""
+            fi
+            external="$(printf '%s' "$external" | tr '[:upper:]' '[:lower:]')"
+
+            if [[ "$app_id" != *"/resourceGroups/${RESOURCE_GROUP}/"* ]]; then
+              echo "${name} is not in ${RESOURCE_GROUP}."
+              exit 1
+            fi
+            if [[ "$environment_id" != *"/managedEnvironments/${CONTAINER_APPS_ENVIRONMENT}" ]]; then
+              echo "${name} is not in ${CONTAINER_APPS_ENVIRONMENT}."
+              exit 1
+            fi
+            if [ "$actual_image" != "$image" ]; then
+              echo "${name} is not running the pinned image."
+              exit 1
+            fi
+            if [ "$min_replicas" != "0" ] || [ "$max_replicas" != "1" ]; then
+              echo "${name} is not scaled from 0 to 1."
+              exit 1
+            fi
+            if [ "$external" != "true" ] || [ "$port" != "8000" ]; then
+              echo "${name} does not expose external ingress on port 8000."
+              exit 1
+            fi
+            if [ -n "$plain_value" ] || [ "$secret_ref" != "database-url" ]; then
+              echo "${name} does not keep DATABASE_URL as a secret reference."
+              exit 1
+            fi
+            if [ -n "$workload" ] && [ "$workload" != "Consumption" ]; then
+              echo "${name} is not using the Consumption profile."
+              exit 1
+            fi
+
+            echo "${name} group=${RESOURCE_GROUP} environment=${CONTAINER_APPS_ENVIRONMENT} image=${image} scale=0-1 ingress=external:8000 workload=${workload:-Consumption} database=secretref fqdn=${fqdn}"
+          }
+
+          wait_for_health() {
+            local name="$1"
+            local fqdn body attempt code
+            fqdn="$(field "$name" properties.configuration.ingress.fqdn)"
+            body="/tmp/${name}-health.json"
+
+            for attempt in $(seq 1 24); do
+              code="$(curl --silent --show-error --max-time 20 \
+                --output "$body" --write-out '%{http_code}' \
+                "https://${fqdn}/health" || true)"
+              if [ "$code" = "200" ]; then
+                if jq -e --arg sha "$IMAGE_SHA" \
+                  '.status == "ok" and .db == "ok" and .version == $sha' \
+                  "$body" >/dev/null; then
+                  echo "${name} https://${fqdn}/health status=ok db=ok version=${IMAGE_SHA}"
+                  rm -f "$body"
+                  return 0
+                fi
+                echo "${name} answered 200 but not with the pinned healthy body."
+                jq -c '{status, db, version}' "$body" || true
+                rm -f "$body"
+                return 1
+              fi
+              echo "${name} health attempt ${attempt} returned ${code}"
+              sleep 15
+            done
+
+            echo "${name} did not become healthy in time."
+            rm -f "$body"
+            return 1
+          }
+
+          deploy_app "$OPERATIONS_APP" "$operations_image" "$OPERATIONS_DATABASE_URL"
+          deploy_app "$FINANCE_APP" "$finance_image" "$FINANCE_DATABASE_URL"
+          verify_app "$OPERATIONS_APP" "$operations_image"
+          verify_app "$FINANCE_APP" "$finance_image"
+
+          operations_healthy=0
+          finance_healthy=0
+          wait_for_health "$OPERATIONS_APP" || operations_healthy=1
+          wait_for_health "$FINANCE_APP" || finance_healthy=1
+          if [ "$operations_healthy" -ne 0 ] || [ "$finance_healthy" -ne 0 ]; then
+            echo "Deployment is not healthy."
+            exit 1
+          fi

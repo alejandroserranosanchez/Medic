@@ -1,8 +1,10 @@
 openapi: 3.0.3
 info:
   title: Medic Finance
-  version: 0.1.0
-  description: Health for the finance database. Receivable and payment tables exist. Their HTTP endpoints do not yet.
+  version: 0.2.0
+  description: >
+    Receivables and payments for the clinic. A receivable stores a booking id,
+    but this service does not check that the booking exists in Operations.
 paths:
   /health:
     get:
@@ -20,7 +22,138 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Health"
+  /receivables:
+    post:
+      summary: Create the charge for one booking.
+      description: >
+        source_booking_id must be unique in this database. Finance does not
+        call Operations to confirm the booking.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewReceivable"
+      responses:
+        "201":
+          description: The receivable was saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Receivable"
+        "400":
+          description: The body, dates, or fee is not usable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: This booking already has a receivable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /receivables/{id}:
+    get:
+      summary: Fetch one receivable.
+      parameters:
+        - $ref: "#/components/parameters/ReceivableId"
+      responses:
+        "200":
+          description: The receivable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Receivable"
+        "404":
+          description: No receivable has that id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /receivables/{id}/payments:
+    post:
+      summary: Record a payment against one receivable.
+      description: >
+        The same reference with the same receivable, amount, and date returns
+        the existing payment. The same reference with different details conflicts.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewPayment"
+      responses:
+        "201":
+          description: The payment was saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Payment"
+        "200":
+          description: The same payment was already saved, so no new row was created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Payment"
+        "400":
+          description: The amount, date, or reference is not usable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: The receivable does not exist.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: The payment reference was already used with different details.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /receivables/{id}/balance:
+    get:
+      summary: Report payments and the outstanding balance.
+      parameters:
+        - $ref: "#/components/parameters/ReceivableId"
+        - name: as_of
+          in: query
+          required: false
+          description: Date used for the overdue flag. Defaults to today's UTC date.
+          schema:
+            type: string
+            format: date
+            example: "2026-11-21"
+      responses:
+        "200":
+          description: The money status of this receivable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Balance"
+        "400":
+          description: as_of is not a YYYY-MM-DD date.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: No receivable has that id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 components:
+  parameters:
+    ReceivableId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
   schemas:
     Health:
       type: object
@@ -35,3 +168,114 @@ components:
         version:
           type: string
           description: Git SHA baked into the image. Local runs use unknown when GIT_SHA is unset.
+    NewReceivable:
+      type: object
+      required: [source_booking_id, procedure_code, performed_date, due_date, expected_fee_cents]
+      properties:
+        source_booking_id:
+          type: integer
+          minimum: 1
+          description: Booking id stored as a label. It is not a foreign key.
+        procedure_code:
+          type: string
+          example: GASTRO
+        performed_date:
+          type: string
+          format: date
+        due_date:
+          type: string
+          format: date
+        expected_fee_cents:
+          type: integer
+          minimum: 0
+          description: Fee in integer euro cents. 12000 means €120.
+    Receivable:
+      type: object
+      required:
+        - id
+        - source_booking_id
+        - procedure_code
+        - performed_date
+        - due_date
+        - expected_fee_cents
+      properties:
+        id:
+          type: integer
+        source_booking_id:
+          type: integer
+        procedure_code:
+          type: string
+        performed_date:
+          type: string
+          format: date
+        due_date:
+          type: string
+          format: date
+        expected_fee_cents:
+          type: integer
+    NewPayment:
+      type: object
+      required: [payment_reference, amount_cents, paid_date]
+      properties:
+        payment_reference:
+          type: string
+        amount_cents:
+          type: integer
+          minimum: 1
+        paid_date:
+          type: string
+          format: date
+    Payment:
+      type: object
+      required: [id, receivable_id, payment_reference, amount_cents, paid_date]
+      properties:
+        id:
+          type: integer
+        receivable_id:
+          type: integer
+        payment_reference:
+          type: string
+        amount_cents:
+          type: integer
+        paid_date:
+          type: string
+          format: date
+    Balance:
+      type: object
+      required:
+        - receivable_id
+        - as_of
+        - payments
+        - expected_fee_cents
+        - paid_cents
+        - balance_cents
+        - status
+        - overdue
+      properties:
+        receivable_id:
+          type: integer
+        as_of:
+          type: string
+          format: date
+        payments:
+          type: array
+          items:
+            $ref: "#/components/schemas/Payment"
+        expected_fee_cents:
+          type: integer
+        paid_cents:
+          type: integer
+        balance_cents:
+          type: integer
+          description: Expected fee minus payments. Negative when the patient paid more than the fee.
+        status:
+          type: string
+          enum: [unpaid, partial, settled, overpaid]
+        overdue:
+          type: boolean
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string

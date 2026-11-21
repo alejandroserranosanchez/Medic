@@ -141,7 +141,7 @@ def booking_conflicts(
     start = parse_hhmm(start_time)
     occupied_end = parse_hhmm(end_time) + room_turnover_minutes
     for other in existing:
-        if other.status not in ("active", "completed"):
+        if other.status not in ("active", "completed", "completion_pending"):
             continue
         other_start = parse_hhmm(other.start_time)
         other_end = parse_hhmm(other.end_time) + other.room_turnover_minutes

@@ -78,11 +78,15 @@ services:
       context: ./services/operations
       args:
         GIT_SHA: ${GIT_SHA:-unknown}
+    environment:
+      DATABASE_URL: mssql://operations_user:${OPERATIONS_DB_PASSWORD}@sqlserver:1433/operations
+      FINANCE_SERVICE_URL: http://finance:8000
+      FINANCE_TIMEOUT_SECONDS: "3"
     depends_on:
       sql-init:
         condition: service_completed_successfully
-    environment:
-      DATABASE_URL: mssql://operations_user:${OPERATIONS_DB_PASSWORD}@sqlserver:1433/operations
+      finance:
+        condition: service_started
     ports:
       - "8001:8000"
 

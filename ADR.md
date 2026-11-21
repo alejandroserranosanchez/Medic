@@ -14,7 +14,7 @@ Consequences: Fast to start and easy to keep one process and one dependency mani
 ## [2]. Two domains with an application-service boundary
 
 Date: 2026-10-07
-Status: Decided
+Status: Superseded by 6
 Context: The assignment requires two independently modularizable backend feature domains that still run as one process today. Capacity workflows and money workflows must not become a tangled ball of imports.
 Decision: Split code into `clinic/operations` (sessions, requests, bookings, recovery) and `clinic/finance` (fees, receivables, payments, investment). Operations never imports finance. Finance never reads operations tables. Future completion-of-booking work goes through `clinic/application.py` in one SQLite transaction.
 Alternatives considered: Putting all SQL in one repository module was rejected because it hides the seam we must explain later when splitting services. An event bus or queue was rejected because the assignment forbids multi-process infrastructure now.
@@ -48,3 +48,22 @@ Context: Real clinics use hospital scheduling, insurer remittance files, and cap
 Decision: Keep Medic fully local with fictional data, deterministic rules, and saved investment scenarios that explain bottlenecks. Do not integrate EndoSoft-like schedulers, insurer remittances, payment processors, or public cloud APIs in Assignment 1.
 Alternatives considered: A read-only CSV import of “real-looking” clinic exports was rejected for this week because it adds validation/privacy work without helping the graded domains. Building a fake external HTTP stub was rejected as theatre that complicates the comprehension check.
 Consequences: The demo must show transparent local calculations instead of vendor integrations. After the course, discovery interviews and authorised imports are the next product step — not part of this repository’s scope.
+
+## [6]. Operations calls Finance when a booking is completed
+
+Date: 2026-11-21
+Status: Decided
+Context: Assignment 2 splits the two domains into separate processes and separate databases. ADR-2 put the completion workflow in one SQLite transaction. That transaction cannot cross SQL Server databases. The clinic still needs one completed booking to produce one receivable. The established fees remain GASTRO 12000 cents and COLONO 18000 cents, from the Assignment 1 catalogue.
+Decision: Operations owns the booking status. Finance owns receivables, payments, and the fee catalogue. Operations calls `POST /receivables` at `FINANCE_SERVICE_URL`. It sends the booking id, procedure code, and dates. It does not send a fee. Finance looks up the catalogue and stores the snapshot. `source_booking_id` stays a unique label, not a foreign key. Neither service reads the other database. The hostname is configuration, in Compose `http://finance:8000`, and on Azure the Finance app's HTTPS address.
+Alternatives considered: Keeping one SQL transaction was rejected because the databases are now separate. Letting the browser call both services was rejected for this flow because the assignment requires one server-side call across the seam. Copying the fee numbers into Operations was rejected because the fee belongs to Finance and would drift. A queue was rejected because the assignment forbids a broker.
+Consequences: The domain split from ADR-2 remains. The single-database transaction does not. A Finance outage does not change Operations `GET /health`, because health only touches the Operations database. Completion can be left unfinished, which ADR-7 describes. ADR-8, ADR-9, and ADR-10 are not written yet.
+
+## [7]. A lost Finance reply is not a successful completion
+
+Date: 2026-11-21
+Status: Decided
+Context: There is no distributed transaction. Finance can save the receivable and then lose the network reply. A retry must not create a second receivable, and Operations must not tell the caller the booking is completed while the money result is unknown.
+Decision: The booking becomes `completion_pending` before the HTTP call. The call has a finite timeout, 3 seconds unless `FINANCE_TIMEOUT_SECONDS` sets a value greater than 0 and at most 30. Any other setting falls back to 3 seconds. Connection refused on the first attempt means Finance did not receive it, so the booking returns to `active` and the response is 503. A timeout, a connection drop, or an HTTP 5xx leaves `completion_pending` and returns 503. The response is not success. A later attempt sends the same details. Finance returns the existing receivable with HTTP 200 when the procedure, dates, and fee match, and HTTP 409 when they do not. Operations stores `finance_receivable_id` only after HTTP 200 or 201, then marks the booking `completed`. A repeated completion of that booking returns the stored id and does not call Finance. A booking that has not started is rejected locally and Finance is not called.
+Alternatives considered: Marking the booking completed before the call was rejected because a timeout would report success with no known receivable. Retrying forever was rejected. Adding a background worker was rejected because it is a second system and the assignment does not ask for one. Treating every Finance 409 as "already done" was rejected because a conflicting fee or date must not be accepted.
+Consequences: The patient can be asked to complete again after a timeout. Until that retry, the booking is visibly pending. The fee snapshot is frozen on the first successful Finance save. If the catalogue later changes, a retry with the new fee conflicts instead of rewriting the charge. `003_completion_state.sql` adds the pending status and the nullable Finance id to bookings that already exist. `003_fee_assumptions.sql` adds the catalogue. Neither file rewrites an earlier migration.
+

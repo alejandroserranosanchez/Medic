@@ -65,7 +65,7 @@ Run that from a clone of the professor's `sdd-assignment-1` repository. The pass
 
 ## Local SQL Server for Assignment 2
 
-This Compose file starts SQL Server, creates the `operations` and `finance` databases, and starts a small service for each. Operations answers health, sessions, and bookings. Finance answers health and, on startup, creates its receivables and payments tables. It can save a receivable, record a payment, and report the balance. It does not ask Operations whether the booking exists. The original clinic program still keeps the SQLite copy of payments:
+This Compose file starts SQL Server, creates the `operations` and `finance` databases, and starts a small service for each. Operations answers health, sessions, and bookings. Completing a booking calls Finance at `FINANCE_SERVICE_URL` and waits at most `FINANCE_TIMEOUT_SECONDS` (3 seconds in Compose). Finance answers health and, on startup, creates its receivables, payments, and the established fee catalogue. GASTRO stays 12000 cents and COLONO stays 18000 cents. Finance does not ask Operations whether the booking exists. The original clinic program still keeps the SQLite copy of payments:
 
 ```bash
 python app.py

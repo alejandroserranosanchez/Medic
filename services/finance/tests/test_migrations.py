@@ -63,9 +63,9 @@ def test_runner_applies_each_file_once():
     connection = _Connection()
     first = apply_migrations(connection)
     second = apply_migrations(connection)
-    assert first == ["001_receivables.sql", "002_payments.sql"]
+    assert first == ["001_receivables.sql", "002_payments.sql", "003_fee_assumptions.sql"]
     assert second == []
-    assert connection.applied == ["001_receivables.sql", "002_payments.sql"]
+    assert connection.applied == ["001_receivables.sql", "002_payments.sql", "003_fee_assumptions.sql"]
 
 
 def _insert_receivable(cursor, booking_id=41):
@@ -85,7 +85,7 @@ def _insert_receivable(cursor, booking_id=41):
 def test_saved_money_survives_reconnect_and_a_second_migration(finance_database):
     from app.db import connect
 
-    assert apply_migrations() == ["001_receivables.sql", "002_payments.sql"]
+    assert apply_migrations() == ["001_receivables.sql", "002_payments.sql", "003_fee_assumptions.sql"]
     first = connect()
     try:
         cursor = first.cursor()
@@ -116,7 +116,7 @@ def test_saved_money_survives_reconnect_and_a_second_migration(finance_database)
         )
         assert cursor.fetchone() == (9000,)
         cursor.execute("SELECT COUNT(*) FROM dbo.schema_migrations")
-        assert cursor.fetchone()[0] == 2
+        assert cursor.fetchone()[0] == 3
     finally:
         second.close()
 

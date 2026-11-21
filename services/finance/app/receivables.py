@@ -126,8 +126,14 @@ def create_receivable(
     procedure_code: str,
     performed_date: str,
     due_date: str,
-    expected_fee_cents: int,
-) -> dict:
+    expected_fee_cents: int | None = None,
+) -> tuple[dict, bool]:
+    """Return the receivable and whether this call inserted it.
+
+    The same booking with the same procedure, dates, and fee returns the existing row.
+    A different payload for that booking conflicts. When the fee is omitted, Finance
+    uses the catalogue row for the procedure code.
+    """
     booking_id = _integer(source_booking_id, "source_booking_id")
     if booking_id < 1:
         raise FinanceError("source_booking_id must be a positive integer")
@@ -136,20 +142,40 @@ def create_receivable(
     due = validate_iso_date(due_date)
     if due < performed:
         raise FinanceError("due date cannot be before the performed date")
-    fee = _integer(expected_fee_cents, "expected_fee_cents")
-    if fee < 0:
+    fee = None if expected_fee_cents is None else _integer(expected_fee_cents, "expected_fee_cents")
+    if fee is not None and fee < 0:
         raise FinanceError("expected_fee_cents cannot be negative")
     cursor = conn.cursor(as_dict=True)
     try:
+        if fee is None:
+            fee = _catalogue_fee(cursor, code)
         cursor.execute(
             """
-            SELECT id FROM dbo.receivables WITH (UPDLOCK, HOLDLOCK)
+            SELECT id, source_booking_id, procedure_code,
+                   CONVERT(char(10), performed_date, 23) AS performed_date,
+                   CONVERT(char(10), due_date, 23) AS due_date,
+                   expected_fee_cents
+            FROM dbo.receivables WITH (UPDLOCK, HOLDLOCK)
             WHERE source_booking_id = %s
             """,
             (booking_id,),
         )
-        if cursor.fetchone() is not None:
-            raise FinanceError("receivable already exists for this booking", status=409)
+        existing = cursor.fetchone()
+        if existing is not None:
+            saved = _receivable_row(existing)
+            same = (
+                saved["procedure_code"] == code
+                and saved["performed_date"] == performed
+                and saved["due_date"] == due
+                and saved["expected_fee_cents"] == fee
+            )
+            if not same:
+                raise FinanceError(
+                    "receivable already exists for this booking with different details",
+                    status=409,
+                )
+            conn.commit()
+            return saved, False
         cursor.execute(
             """
             INSERT INTO dbo.receivables (
@@ -169,11 +195,25 @@ def create_receivable(
         conn.rollback()
         if "CK_" in str(exc):
             raise FinanceError("the database rejected this money record") from exc
-        raise FinanceError("receivable already exists for this booking", status=409) from exc
+        raise FinanceError(
+            "receivable already exists for this booking with different details",
+            status=409,
+        ) from exc
     except Exception:
         conn.rollback()
         raise
-    return get_receivable(conn, receivable_id)
+    return get_receivable(conn, receivable_id), True
+
+
+def _catalogue_fee(cursor, procedure_code: str) -> int:
+    cursor.execute(
+        "SELECT expected_fee_cents FROM dbo.fee_assumptions WHERE procedure_code = %s",
+        (procedure_code,),
+    )
+    row = cursor.fetchone()
+    if row is None:
+        raise FinanceError(f"no fee assumption for {procedure_code}")
+    return int(row["expected_fee_cents"])
 
 
 def get_receivable(conn, receivable_id: int) -> dict:

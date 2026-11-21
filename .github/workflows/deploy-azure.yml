@@ -231,6 +231,19 @@ jobs:
 
           deploy_app "$OPERATIONS_APP" "$operations_image" "$OPERATIONS_DATABASE_URL"
           deploy_app "$FINANCE_APP" "$finance_image" "$FINANCE_DATABASE_URL"
+          finance_fqdn="$(az containerapp show \
+            --name "$FINANCE_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query properties.configuration.ingress.fqdn \
+            --output tsv)"
+          az containerapp update \
+            --name "$OPERATIONS_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --set-env-vars \
+              "DATABASE_URL=secretref:database-url" \
+              "FINANCE_SERVICE_URL=https://${finance_fqdn}" \
+              "FINANCE_TIMEOUT_SECONDS=3" \
+            --output none
           verify_app "$OPERATIONS_APP" "$operations_image"
           verify_app "$FINANCE_APP" "$finance_image"
 

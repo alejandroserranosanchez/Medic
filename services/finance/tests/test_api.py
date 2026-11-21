@@ -168,6 +168,35 @@ def test_unknown_receivable_is_404(client):
     assert missing.get_json()["error"] == "receivable not found"
 
 
+def test_identical_receivable_is_not_duplicated(client):
+    first = client.post("/receivables", json=_receivable())
+    second = client.post("/receivables", json=_receivable())
+    assert first.status_code == 201
+    assert second.status_code == 200
+    assert second.get_json()["id"] == first.get_json()["id"]
+    connection = connect()
+    try:
+        cursor = connection.cursor()
+        cursor.execute("SELECT COUNT(*) FROM dbo.receivables")
+        assert cursor.fetchone()[0] == 1
+    finally:
+        connection.close()
+
+
+def test_omitted_fee_uses_the_established_catalogue(client):
+    body = _receivable(source_booking_id=77)
+    del body["expected_fee_cents"]
+    created = client.post("/receivables", json=body)
+    assert created.status_code == 201
+    assert created.get_json()["expected_fee_cents"] == 12000
+
+    unknown_body = _receivable(procedure_code="UNKNOWN", source_booking_id=78)
+    del unknown_body["expected_fee_cents"]
+    missing = client.post("/receivables", json=unknown_body)
+    assert missing.status_code == 400
+    assert "no fee assumption" in missing.get_json()["error"]
+
+
 def test_duplicate_booking_id_is_a_conflict_and_rows_survive(client):
     created = client.post("/receivables", json=_receivable())
     assert created.status_code == 201

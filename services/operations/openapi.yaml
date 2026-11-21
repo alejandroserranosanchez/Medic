@@ -1,8 +1,10 @@
 openapi: 3.0.3
 info:
   title: Medic Operations
-  version: 0.3.0
-  description: Sessions and bookings for the clinic. Payments are not in this service yet.
+  version: 0.4.0
+  description: >
+    Sessions and bookings for the clinic. Completing a booking calls Finance
+    over HTTP. This service does not read the Finance database.
 paths:
   /health:
     get:
@@ -122,6 +124,59 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /bookings/{id}/complete:
+    post:
+      summary: Mark a started booking done and ask Finance for the receivable.
+      description: >
+        Operations keeps the booking status. Finance creates the receivable
+        from the procedure catalogue. A timeout leaves the booking
+        completion_pending and is not reported as success.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompleteBooking"
+      responses:
+        "200":
+          description: Finance confirmed the receivable and the booking is completed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompletedBooking"
+        "400":
+          description: The booking cannot be completed, or Finance rejected the details.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompletionProblem"
+        "404":
+          description: No booking has that id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Finance already stored a different receivable for this booking.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompletionProblem"
+        "503":
+          description: >
+            Finance could not be reached, or the result is unknown.
+            booking_status is active when the request never arrived,
+            and completion_pending when the receivable might exist.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompletionProblem"
 components:
   schemas:
     Health:
@@ -245,7 +300,7 @@ components:
           type: string
         status:
           type: string
-          enum: [active, cancelled, completed]
+          enum: [active, cancelled, completed, completion_pending]
         timing_source:
           type: string
           enum: [profile, catalogue]
@@ -265,3 +320,47 @@ components:
       properties:
         error:
           type: string
+    CompleteBooking:
+      type: object
+      required: [performed_date, due_date]
+      properties:
+        performed_date:
+          type: string
+          format: date
+          description: Must be the booking's session date.
+        due_date:
+          type: string
+          format: date
+    CompletedBooking:
+      type: object
+      required: [booking_id, status, receivable_id, procedure_code, performed_date, outcome]
+      properties:
+        booking_id:
+          type: integer
+        status:
+          type: string
+          enum: [completed]
+        receivable_id:
+          type: integer
+        procedure_code:
+          type: string
+        performed_date:
+          type: string
+          format: date
+        due_date:
+          type: string
+          format: date
+        expected_fee_cents:
+          type: integer
+        outcome:
+          type: string
+          enum: [created, already_recorded, already_completed]
+    CompletionProblem:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+        booking_status:
+          type: string
+          enum: [active, completion_pending]

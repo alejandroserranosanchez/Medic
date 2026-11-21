@@ -164,7 +164,7 @@ def create_booking(
             """
             SELECT id, session_id, start_time, end_time, status, room_turnover_minutes
             FROM dbo.bookings WITH (UPDLOCK, HOLDLOCK)
-            WHERE session_id = %s AND status IN (N'active', N'completed')
+            WHERE session_id = %s AND status IN (N'active', N'completed', N'completion_pending')
             """,
             (session_key,),
         )

@@ -70,16 +70,16 @@ def create_app() -> Flask:
                 "procedure_code": body["procedure_code"],
                 "performed_date": body["performed_date"],
                 "due_date": body["due_date"],
-                "expected_fee_cents": body["expected_fee_cents"],
+                "expected_fee_cents": body.get("expected_fee_cents"),
             }
         except KeyError as exc:
             return jsonify({"error": f"missing field {exc.args[0]}"}), 400
         try:
             with connect() as conn:
-                created = create_receivable(conn, **fields)
+                created, is_new = create_receivable(conn, **fields)
         except (FinanceError, ValueError) as exc:
             return jsonify({"error": getattr(exc, "reason", str(exc))}), getattr(exc, "status", 400)
-        return jsonify(created), 201
+        return jsonify(created), 201 if is_new else 200
 
     @app.get("/receivables/<int:receivable_id>")
     def receivables_get(receivable_id: int):

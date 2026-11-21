@@ -1,10 +1,11 @@
 openapi: 3.0.3
 info:
   title: Medic Finance
-  version: 0.2.0
+  version: 0.3.0
   description: >
     Receivables and payments for the clinic. A receivable stores a booking id,
     but this service does not check that the booking exists in Operations.
+    Repeating the same receivable details returns the original row.
 paths:
   /health:
     get:
@@ -41,6 +42,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Receivable"
+        "200":
+          description: >
+            The same booking, procedure, dates, and fee were already saved.
+            No second receivable was created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Receivable"
         "400":
           description: The body, dates, or fee is not usable.
           content:
@@ -48,7 +57,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "409":
-          description: This booking already has a receivable.
+          description: This booking already has a receivable with different details.
           content:
             application/json:
               schema:
@@ -170,7 +179,7 @@ components:
           description: Git SHA baked into the image. Local runs use unknown when GIT_SHA is unset.
     NewReceivable:
       type: object
-      required: [source_booking_id, procedure_code, performed_date, due_date, expected_fee_cents]
+      required: [source_booking_id, procedure_code, performed_date, due_date]
       properties:
         source_booking_id:
           type: integer
@@ -188,7 +197,9 @@ components:
         expected_fee_cents:
           type: integer
           minimum: 0
-          description: Fee in integer euro cents. 12000 means €120.
+          description: >
+            Fee in integer euro cents. 12000 means €120. Omit it and Finance uses
+            the catalogue: GASTRO is 12000 and COLONO is 18000.
     Receivable:
       type: object
       required:

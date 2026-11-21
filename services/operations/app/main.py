@@ -3,6 +3,7 @@
 GET /health checks this service's own database.
 Sessions can be listed, fetched, and created.
 POST /bookings saves one procedure inside an existing session.
+POST /bookings/<id>/complete asks Finance to record the receivable.
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ import pymssql
 from flask import Flask, jsonify, request
 
 from app.bookings import create_booking
+from app.completion import complete_booking
 from app.db import connect
 from app.rules import OperationsError
 from app.sessions import create_session, get_session, list_sessions
@@ -130,6 +132,30 @@ def create_app() -> Flask:
             reason = getattr(exc, "reason", str(exc))
             return jsonify({"error": reason}), status
         return jsonify(created), 201
+
+    @app.post("/bookings/<int:booking_id>/complete")
+    def bookings_complete(booking_id: int):
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            return jsonify({"error": "JSON object required"}), 400
+        try:
+            performed_date = body["performed_date"]
+            due_date = body["due_date"]
+        except KeyError as exc:
+            return jsonify({"error": f"missing field {exc.args[0]}"}), 400
+        try:
+            with connect() as conn:
+                status, payload = complete_booking(
+                    conn,
+                    booking_id=booking_id,
+                    performed_date=performed_date,
+                    due_date=due_date,
+                )
+        except (OperationsError, ValueError) as exc:
+            code = getattr(exc, "status", 400)
+            reason = getattr(exc, "reason", str(exc))
+            return jsonify({"error": reason}), code
+        return jsonify(payload), status
 
     return app
 

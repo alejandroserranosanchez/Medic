@@ -1,8 +1,10 @@
-"""Finance service scaffold.
+"""Finance service.
 
-This process can answer a health check against its own database.
-It does not create receivables, record payments, or compare equipment yet.
+This process applies its own migrations, then answers a health check.
+It does not yet expose receivable or payment endpoints.
 """
+
+from __future__ import annotations
 
 import os
 
@@ -60,3 +62,14 @@ def create_app() -> Flask:
 
 
 app = create_app()
+
+
+def main() -> None:
+    from app.migrate import apply_migrations
+
+    apply_migrations()
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "8000")), debug=False)
+
+
+if __name__ == "__main__":
+    main()

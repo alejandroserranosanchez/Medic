@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: Medic Finance
   version: 0.1.0
-  description: Health for the finance database. Receivables and payments are not in this service yet.
+  description: Health for the finance database. Receivable and payment tables exist. Their HTTP endpoints do not yet.
 paths:
   /health:
     get:

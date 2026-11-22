@@ -11,6 +11,7 @@ import os
 import pymssql
 from flask import Flask, jsonify, request
 
+from app.cors import apply_cors
 from app.db import connect
 from app.receivables import FinanceError, create_receivable, get_balance, get_receivable, record_payment
 
@@ -41,6 +42,7 @@ def database_accepts_a_write() -> bool:
 
 def create_app() -> Flask:
     app = Flask(__name__)
+    apply_cors(app)
 
     @app.get("/health")
     def health():

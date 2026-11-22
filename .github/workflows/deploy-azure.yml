@@ -46,6 +46,7 @@ jobs:
           AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
           OPERATIONS_DATABASE_URL: ${{ secrets.OPERATIONS_DATABASE_URL }}
           FINANCE_DATABASE_URL: ${{ secrets.FINANCE_DATABASE_URL }}
+          UI_ORIGIN: ${{ vars.UI_ORIGIN }}
         run: |
           set -euo pipefail
 
@@ -68,6 +69,24 @@ jobs:
             exit 1
           fi
 
+          # Keep the browser origin already set on the apps when the GitHub variable is empty.
+          if [ -z "${UI_ORIGIN:-}" ]; then
+            if az containerapp show \
+              --name "$OPERATIONS_APP" \
+              --resource-group "$RESOURCE_GROUP" \
+              --query name \
+              --output tsv >/dev/null 2>&1; then
+              UI_ORIGIN="$(az containerapp show \
+                --name "$OPERATIONS_APP" \
+                --resource-group "$RESOURCE_GROUP" \
+                --query "properties.template.containers[0].env[?name=='UI_ORIGIN'].value | [0]" \
+                --output tsv)"
+              if [ "$UI_ORIGIN" = "null" ] || [ "$UI_ORIGIN" = "None" ]; then
+                UI_ORIGIN=""
+              fi
+            fi
+          fi
+
           operations_image="ghcr.io/alejandroserranosanchez/medic-operations:${IMAGE_SHA}"
           finance_image="ghcr.io/alejandroserranosanchez/medic-finance:${IMAGE_SHA}"
 
@@ -81,6 +100,13 @@ jobs:
             local name="$1"
             local image="$2"
             local database_url="$3"
+
+            local -a app_env
+            # Same clinic-local clock as docker-compose.yml. Booking start checks use datetime.now().
+            app_env=("DATABASE_URL=secretref:database-url" "TZ=Europe/Madrid")
+            if [ -n "${UI_ORIGIN:-}" ]; then
+              app_env+=("UI_ORIGIN=${UI_ORIGIN}")
+            fi
 
             if az containerapp show \
               --name "$name" \
@@ -100,7 +126,7 @@ jobs:
                 --memory 0.5Gi \
                 --min-replicas 0 \
                 --max-replicas 1 \
-                --set-env-vars "DATABASE_URL=secretref:database-url" \
+                --set-env-vars "${app_env[@]}" \
                 --output none
             else
               az containerapp create \
@@ -115,7 +141,7 @@ jobs:
                 --ingress external \
                 --target-port 8000 \
                 --secrets "database-url=${database_url}" \
-                --env-vars "DATABASE_URL=secretref:database-url" \
+                --env-vars "${app_env[@]}" \
                 --output none
             fi
 
@@ -236,13 +262,19 @@ jobs:
             --resource-group "$RESOURCE_GROUP" \
             --query properties.configuration.ingress.fqdn \
             --output tsv)"
+          operations_env=(
+            "DATABASE_URL=secretref:database-url"
+            "FINANCE_SERVICE_URL=https://${finance_fqdn}"
+            "FINANCE_TIMEOUT_SECONDS=3"
+            "TZ=Europe/Madrid"
+          )
+          if [ -n "${UI_ORIGIN:-}" ]; then
+            operations_env+=("UI_ORIGIN=${UI_ORIGIN}")
+          fi
           az containerapp update \
             --name "$OPERATIONS_APP" \
             --resource-group "$RESOURCE_GROUP" \
-            --set-env-vars \
-              "DATABASE_URL=secretref:database-url" \
-              "FINANCE_SERVICE_URL=https://${finance_fqdn}" \
-              "FINANCE_TIMEOUT_SECONDS=3" \
+            --set-env-vars "${operations_env[@]}" \
             --output none
           verify_app "$OPERATIONS_APP" "$operations_image"
           verify_app "$FINANCE_APP" "$finance_image"

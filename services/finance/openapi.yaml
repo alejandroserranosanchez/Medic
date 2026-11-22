@@ -6,6 +6,10 @@ info:
     Receivables and payments for the clinic. A receivable stores a booking id,
     but this service does not check that the booking exists in Operations.
     Repeating the same receivable details returns the original row.
+    Browsers may call it only from the UI_ORIGIN environment variable.
+    A call with no Origin header, such as a health check or another service,
+    is not blocked. OPTIONS answers a preflight for GET, POST, and Content-Type.
+    The response origin is never a wildcard.
 paths:
   /health:
     get:

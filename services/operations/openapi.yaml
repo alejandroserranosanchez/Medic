@@ -5,6 +5,10 @@ info:
   description: >
     Sessions and bookings for the clinic. Completing a booking calls Finance
     over HTTP. This service does not read the Finance database.
+    Browsers may call it only from the UI_ORIGIN environment variable.
+    A call with no Origin header, such as a health check or another service,
+    is not blocked. OPTIONS answers a preflight for GET, POST, and Content-Type.
+    The response origin is never a wildcard.
 paths:
   /health:
     get:

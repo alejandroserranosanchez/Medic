@@ -1,6 +1,7 @@
 # Local Assignment 2 stack.
 # SQL Server holds the operations and finance databases.
-# The two services below only answer /health. They do not run the clinic.
+# Operations and Finance are the two service containers.
+# nginx serves the static UI and is not a third application service.
 # The original Flask app still uses SQLite and is started with python app.py.
 
 name: medic
@@ -82,6 +83,8 @@ services:
       DATABASE_URL: mssql://operations_user:${OPERATIONS_DB_PASSWORD}@sqlserver:1433/operations
       FINANCE_SERVICE_URL: http://finance:8000
       FINANCE_TIMEOUT_SECONDS: "3"
+      UI_ORIGIN: http://localhost:8080
+      TZ: Europe/Madrid
     depends_on:
       sql-init:
         condition: service_completed_successfully
@@ -100,8 +103,22 @@ services:
         condition: service_completed_successfully
     environment:
       DATABASE_URL: mssql://finance_user:${FINANCE_DB_PASSWORD}@sqlserver:1433/finance
+      UI_ORIGIN: http://localhost:8080
+      TZ: Europe/Madrid
     ports:
       - "8002:8000"
+
+  ui:
+    image: nginx:alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./ui:/usr/share/nginx/html:ro
+    depends_on:
+      operations:
+        condition: service_started
+      finance:
+        condition: service_started
 
 volumes:
   medic-sql-data:

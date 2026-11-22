@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Medic</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main>
+    <h1>Medic</h1>
+    <p class="note">
+      Operations keeps sessions and bookings. Completing a booking asks Finance for the receivable.
+      This page does not list every booking on the server: Operations has no booking-list endpoint,
+      so it remembers only the bookings created in this browser. Open this page at
+      http://localhost:8080 when using Compose. localhost and 127.0.0.1 are different origins.
+    </p>
+    <div id="message" class="message" role="status"></div>
+
+    <section>
+      <h2>Sessions</h2>
+      <form id="session-form">
+        <label>Room <input name="room_label" required value="Room 1"></label>
+        <label>Clinician <input name="clinician_label" required value="Dr. Vega"></label>
+        <label>Date <input name="session_date" type="date" required></label>
+        <label>Start <input name="start_time" required value="09:00" pattern="[0-9]{2}:[0-9]{2}"></label>
+        <label>End <input name="end_time" required value="12:00" pattern="[0-9]{2}:[0-9]{2}"></label>
+        <div class="actions">
+          <button type="submit">Create session</button>
+          <button type="button" class="secondary" id="reload-sessions">Reload sessions</button>
+        </div>
+      </form>
+      <table>
+        <thead>
+          <tr><th>Id</th><th>Date</th><th>Time</th><th>Room</th><th>Clinician</th></tr>
+        </thead>
+        <tbody id="sessions"></tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Booking</h2>
+      <form id="booking-form">
+        <label>Session id <input name="session_id" type="number" min="1" required></label>
+        <label>Start <input name="start_time" required value="09:00" pattern="[0-9]{2}:[0-9]{2}"></label>
+        <label>Patient reference <input name="patient_ref" required value="P-1001"></label>
+        <label>Procedure
+          <select name="procedure_code">
+            <option>GASTRO</option>
+            <option>COLONO</option>
+          </select>
+        </label>
+        <label>Priority <input name="priority" type="number" required value="1"></label>
+        <label>Minimum notice (minutes) <input name="minimum_notice_minutes" type="number" min="0" required value="0"></label>
+        <label>Available from <input name="available_from" type="datetime-local" required></label>
+        <label>Available to <input name="available_to" type="datetime-local" required></label>
+        <label class="wide"><span><input name="ready" type="checkbox" checked> Patient is ready</span></label>
+        <div class="actions"><button type="submit">Create booking</button></div>
+      </form>
+      <table>
+        <thead>
+          <tr><th>Id</th><th>Patient</th><th>Procedure</th><th>Session date</th><th>Status</th><th>Receivable</th><th></th></tr>
+        </thead>
+        <tbody id="bookings"></tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Complete booking</h2>
+      <p>The performed date must be the session date. A HTTP 503 means Finance did not confirm the receivable. Repeat the same completion; it does not create a second receivable when the details match.</p>
+      <form id="complete-form">
+        <label>Booking id <input name="booking_id" type="number" min="1" required></label>
+        <label>Performed date <input name="performed_date" type="date" required></label>
+        <label>Due date <input name="due_date" type="date" required></label>
+        <div class="actions"><button type="submit">Complete booking</button></div>
+      </form>
+    </section>
+
+    <section>
+      <h2>Receivable and payment</h2>
+      <p>The receivable id comes from a successful completion. Finance has no search by booking id.</p>
+      <form id="receivable-form">
+        <label>Receivable id <input name="receivable_id" type="number" min="1" required></label>
+        <div class="actions"><button type="submit">Load receivable and balance</button></div>
+      </form>
+      <p id="receivable" class="money"></p>
+      <form id="payment-form">
+        <label>Payment reference <input name="payment_reference" required placeholder="P1"></label>
+        <label>Amount in cents <input name="amount_cents" type="number" min="1" required value="9000"></label>
+        <label>Paid date <input name="paid_date" type="date" required></label>
+        <div class="actions"><button type="submit">Record payment</button></div>
+      </form>
+    </section>
+  </main>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

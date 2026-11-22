@@ -15,7 +15,7 @@ permissions:
   contents: read
 
 env:
-  IMAGE_SHA: 4b95e68a9ccf6e36797d0a1c7da287ff2e35ea16
+  IMAGE_SHA: 81b1dc5d1b8c94714201b3fa97715f1017364e59
   RESOURCE_GROUP: rg-aserrano
   CONTAINER_APPS_ENVIRONMENT: aserrano-ieu2024-env
   OPERATIONS_APP: aserrano-ieu2024-operations

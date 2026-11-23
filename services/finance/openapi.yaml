@@ -90,6 +90,8 @@ paths:
       description: >
         The same reference with the same receivable, amount, and date returns
         the existing payment. The same reference with different details conflicts.
+      parameters:
+        - $ref: "#/components/parameters/ReceivableId"
       requestBody:
         required: true
         content:

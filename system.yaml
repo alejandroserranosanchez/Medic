@@ -1,0 +1,94 @@
+# yaml-language-server: $schema=./system.schema.json
+student: aserrano.ieu2024
+prefix: aserrano-ieu2024
+public_url: https://aserranoieu2024ui.z28.web.core.windows.net/
+ui:
+  path: ui
+  storage_account: aserranoieu2024ui
+  calls: [operations, finance]
+azure:
+  resource_group: rg-aserrano
+  container_apps_environment: aserrano-ieu2024-env
+  sql_server: aserrano-ieu2024-sql
+  registry: ghcr.io/alejandroserranosanchez
+services:
+  operations:
+    description: Sessions, bookings and booking completion for the clinic.
+    path: services/operations
+    openapi: services/operations/openapi.yaml
+    port_default: 8000
+    health: /health
+    migrations: services/operations/migrations
+    env:
+      PORT:
+        default: 8000
+        description: Port the Operations process listens on.
+      DATABASE_URL:
+        secret: true
+        description: Connection string of the Operations Azure SQL database.
+      GIT_SHA:
+        default: unknown
+        description: Git commit stamped into the image and returned by GET /health.
+      UI_ORIGIN:
+        default: ""
+        description: Browser origin allowed by CORS. Empty means no browser origin is accepted.
+      FINANCE_SERVICE_URL:
+        default: ""
+        description: >
+          Base URL of the Finance service used for POST /receivables.
+          The application treats a missing or blank value as unconfigured and
+          rejects the completion call. Docker Compose sets http://finance:8000;
+          Azure sets the live Finance HTTPS address.
+      FINANCE_TIMEOUT_SECONDS:
+        default: 3
+        description: Finite HTTP timeout in seconds for calls to Finance. Invalid values fall back to 3.
+      TZ:
+        default: UTC
+        description: >
+          Process timezone used by datetime.now(). The application does not
+          assign this variable itself. Compose and Azure set Europe/Madrid.
+          When unset, the service images run with UTC.
+    calls:
+      - service: finance
+        url_env: FINANCE_SERVICE_URL
+        endpoints: ["POST /receivables"]
+        timeout_s: 3
+        on_failure: >
+          The booking is not marked completed. A confirmed connection refusal on
+          the first attempt returns the booking to active with HTTP 503. A timeout,
+          dropped connection or HTTP 5xx leaves the booking completion_pending and
+          returns HTTP 503. The caller retries the same completion; Finance returns
+          the existing receivable when the details match, so a second charge is not
+          created.
+    azure:
+      container_app: aserrano-ieu2024-operations
+      sql_database: aserrano-ieu2024-operations-db
+  finance:
+    description: Receivables, payments and the procedure fee catalogue.
+    path: services/finance
+    openapi: services/finance/openapi.yaml
+    port_default: 8000
+    health: /health
+    migrations: services/finance/migrations
+    env:
+      PORT:
+        default: 8000
+        description: Port the Finance process listens on.
+      DATABASE_URL:
+        secret: true
+        description: Connection string of the Finance Azure SQL database.
+      GIT_SHA:
+        default: unknown
+        description: Git commit stamped into the image and returned by GET /health.
+      UI_ORIGIN:
+        default: ""
+        description: Browser origin allowed by CORS. Empty means no browser origin is accepted.
+      TZ:
+        default: UTC
+        description: >
+          Process timezone used by datetime.now(). The application does not
+          assign this variable itself. Compose and Azure set Europe/Madrid.
+          When unset, the service images run with UTC.
+    azure:
+      container_app: aserrano-ieu2024-finance
+      sql_database: aserrano-ieu2024-finance-db

@@ -6,6 +6,63 @@ on:
   workflow_call:
 
 jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install contract validators
+        run: pip install "jsonschema>=4.20" "openapi-spec-validator>=0.7" PyYAML
+      - name: Validate system.yaml and OpenAPI documents
+        run: |
+          python <<'PY'
+          from pathlib import Path
+          import json
+          import sys
+
+          import yaml
+          from jsonschema import Draft202012Validator
+          from openapi_spec_validator import validate
+          from openapi_spec_validator.validation.exceptions import OpenAPISpecValidatorError
+
+          root = Path(".")
+          schema = json.loads((root / "system.schema.json").read_text(encoding="utf-8"))
+          system = yaml.safe_load((root / "system.yaml").read_text(encoding="utf-8"))
+          Draft202012Validator(schema).validate(system)
+
+          for path in system["ui"]["path"], *(svc["path"] for svc in system["services"].values()):
+              if not (root / path).exists():
+                  raise SystemExit(f"missing path from system.yaml: {path}")
+          for svc in system["services"].values():
+              openapi_path = root / svc["openapi"]
+              migrations = root / svc["migrations"]
+              if not openapi_path.is_file():
+                  raise SystemExit(f"missing OpenAPI file: {openapi_path}")
+              if not migrations.is_dir():
+                  raise SystemExit(f"missing migrations folder: {migrations}")
+              try:
+                  validate(yaml.safe_load(openapi_path.read_text(encoding="utf-8")))
+              except OpenAPISpecValidatorError as exc:
+                  raise SystemExit(f"OpenAPI invalid ({openapi_path}): {exc}") from exc
+
+          finance_paths = yaml.safe_load(
+              (root / system["services"]["finance"]["openapi"]).read_text(encoding="utf-8")
+          )["paths"]
+          for call in system["services"]["operations"].get("calls") or []:
+              if call["service"] != "finance":
+                  continue
+              for endpoint in call["endpoints"]:
+                  method, path = endpoint.split(" ", 1)
+                  if path not in finance_paths or method.lower() not in finance_paths[path]:
+                      raise SystemExit(
+                          f"operations call {endpoint} is missing from Finance OpenAPI"
+                      )
+
+          print("system.yaml and OpenAPI documents are valid")
+          PY
+
   test:
     runs-on: ubuntu-latest
     strategy:
@@ -45,7 +102,7 @@ jobs:
       SQL_PORT: "1433"
 
   images:
-    needs: test
+    needs: [test, contracts]
     runs-on: ubuntu-latest
     permissions:
       contents: read

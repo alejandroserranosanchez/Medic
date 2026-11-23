@@ -1,6 +1,5 @@
-# Deploy the static page to the existing student subscription.
-# Run it by hand from main after the Static Web App and its token exist.
-# It does not build a frontend image and does not create the Static Web App.
+# Deploy the static clinic page to the existing Azure Storage static website.
+# Run it by hand from main. It does not create a Storage account or rebuild images.
 
 name: Deploy UI
 
@@ -13,9 +12,9 @@ permissions:
 
 env:
   RESOURCE_GROUP: rg-aserrano
+  STORAGE_ACCOUNT: aserranoieu2024ui
   OPERATIONS_APP: aserrano-ieu2024-operations
   FINANCE_APP: aserrano-ieu2024-finance
-  UI_APP: aserrano-ieu2024-ui
 
 jobs:
   deploy-ui:
@@ -38,26 +37,52 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Point the services at the Static Web App and write config.js
+      - name: Verify Storage static website, write config.js, set UI_ORIGIN
         shell: bash
         run: |
           set -euo pipefail
-          if ! az staticwebapp show \
-            --name "$UI_APP" \
+
+          if ! az storage account show \
+            --name "$STORAGE_ACCOUNT" \
             --resource-group "$RESOURCE_GROUP" \
             --query name \
             --output tsv >/dev/null 2>&1; then
-            echo "Create ${UI_APP} first. Static Web Apps are not available in France Central; use West Europe."
-            echo "az staticwebapp create --name ${UI_APP} --resource-group ${RESOURCE_GROUP} --location westeurope --sku Free"
+            echo "Storage account ${STORAGE_ACCOUNT} was not found in ${RESOURCE_GROUP}."
+            echo "Do not create another account. Use the existing student Storage account."
             exit 1
           fi
 
-          hostname="$(az staticwebapp show \
-            --name "$UI_APP" \
+          # Management plane (ARM): does not require Blob Data RBAC.
+          static_enabled="$(az storage account blob-service-properties show \
+            --account-name "$STORAGE_ACCOUNT" \
             --resource-group "$RESOURCE_GROUP" \
-            --query defaultHostname \
+            --query staticWebsite.enabled \
             --output tsv)"
-          origin="https://${hostname}"
+          if [ "$static_enabled" != "true" ]; then
+            echo "Static website hosting is not enabled on ${STORAGE_ACCOUNT}."
+            echo "Enable it on the existing account (index document index.html), then rerun."
+            echo "Example:"
+            echo "  az storage blob service-properties update \\"
+            echo "    --account-name ${STORAGE_ACCOUNT} \\"
+            echo "    --static-website \\"
+            echo "    --index-document index.html \\"
+            echo "    --auth-mode login"
+            exit 1
+          fi
+
+          website_endpoint="$(az storage account show \
+            --name "$STORAGE_ACCOUNT" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query primaryEndpoints.web \
+            --output tsv)"
+          website_endpoint="${website_endpoint%/}"
+          if [ -z "$website_endpoint" ] || [ "$website_endpoint" = "None" ] \
+            || [[ "$website_endpoint" != https://* ]]; then
+            echo "Unexpected Storage website endpoint: ${website_endpoint}"
+            exit 1
+          fi
+          origin="$website_endpoint"
+
           operations_fqdn="$(az containerapp show \
             --name "$OPERATIONS_APP" \
             --resource-group "$RESOURCE_GROUP" \
@@ -68,24 +93,21 @@ jobs:
             --resource-group "$RESOURCE_GROUP" \
             --query properties.configuration.ingress.fqdn \
             --output tsv)"
+          if [ -z "$operations_fqdn" ] || [ -z "$finance_fqdn" ]; then
+            echo "Could not read Operations or Finance ingress FQDNs from Azure."
+            exit 1
+          fi
 
+          # Only UI_ORIGIN. Leave DATABASE_URL, FINANCE_*, images and other env alone.
           az containerapp update \
             --name "$FINANCE_APP" \
             --resource-group "$RESOURCE_GROUP" \
-            --set-env-vars \
-              "DATABASE_URL=secretref:database-url" \
-              "UI_ORIGIN=${origin}" \
-              "TZ=Europe/Madrid" \
+            --set-env-vars "UI_ORIGIN=${origin}" \
             --output none
           az containerapp update \
             --name "$OPERATIONS_APP" \
             --resource-group "$RESOURCE_GROUP" \
-            --set-env-vars \
-              "DATABASE_URL=secretref:database-url" \
-              "FINANCE_SERVICE_URL=https://${finance_fqdn}" \
-              "FINANCE_TIMEOUT_SECONDS=3" \
-              "UI_ORIGIN=${origin}" \
-              "TZ=Europe/Madrid" \
+            --set-env-vars "UI_ORIGIN=${origin}" \
             --output none
 
           printf '%s\n' \
@@ -97,14 +119,88 @@ jobs:
             echo "Refusing to publish a database credential."
             exit 1
           fi
-          echo "UI origin ${origin}"
+          if ! grep -q "https://${operations_fqdn}" ui/config.js \
+            || ! grep -q "https://${finance_fqdn}" ui/config.js; then
+            echo "Generated ui/config.js is missing HTTPS API addresses."
+            cat ui/config.js
+            exit 1
+          fi
 
-      - name: Upload the static page
-        uses: Azure/static-web-apps-deploy@v1
-        with:
-          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          action: upload
-          app_location: ui
-          output_location: ""
-          skip_app_build: true
+          echo "UI_ORIGIN=${origin}"
+          echo "WEBSITE_ENDPOINT=${website_endpoint}" >> "$GITHUB_ENV"
+          echo "OPERATIONS_FQDN=${operations_fqdn}" >> "$GITHUB_ENV"
+          echo "FINANCE_FQDN=${finance_fqdn}" >> "$GITHUB_ENV"
+
+      - name: Upload ui/ to the \$web container
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          upload_out="$(az storage blob upload-batch \
+            --account-name "$STORAGE_ACCOUNT" \
+            --destination '$web' \
+            --source ui \
+            --auth-mode login \
+            --overwrite true 2>&1)"
+          upload_rc=$?
+          set -e
+          echo "$upload_out"
+          if [ "$upload_rc" -ne 0 ]; then
+            if echo "$upload_out" | grep -Ei \
+              'AuthorizationPermissionMismatch|This request is not authorized|AuthorizationFailure|Forbidden|does not have (authorization|permission)|RBAC' \
+              >/dev/null; then
+              echo
+              echo "Upload failed: the GitHub OIDC service principal cannot write blobs."
+              echo "Grant Storage Blob Data Contributor on storage account ${STORAGE_ACCOUNT}:"
+              echo
+              echo "  az role assignment create \\"
+              echo "    --assignee \"\${AZURE_CLIENT_ID}\" \\"
+              echo "    --role \"Storage Blob Data Contributor\" \\"
+              echo "    --scope \"\$(az storage account show \\"
+              echo "      --name ${STORAGE_ACCOUNT} \\"
+              echo "      --resource-group ${RESOURCE_GROUP} \\"
+              echo "      --query id --output tsv)\""
+              echo
+              echo "Do not fall back to account keys or connection strings."
+              exit 1
+            fi
+            echo "Upload to \$web failed."
+            exit 1
+          fi
+
+      - name: Verify the live website and published config.js
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Static website CDN/edge can lag briefly after overwrite.
+          ok=0
+          for _ in 1 2 3 4 5 6; do
+            code="$(curl -sS -o /tmp/medic-ui-index.html -w '%{http_code}' \
+              "${WEBSITE_ENDPOINT}/" || true)"
+            if [ "$code" = "200" ]; then
+              ok=1
+              break
+            fi
+            sleep 5
+          done
+          if [ "$ok" -ne 1 ]; then
+            echo "Live website did not return HTTP 200 (last code: ${code:-none})."
+            echo "URL: ${WEBSITE_ENDPOINT}/"
+            exit 1
+          fi
+
+          config_body="$(curl -sS "${WEBSITE_ENDPOINT}/config.js")"
+          echo "$config_body"
+          if ! echo "$config_body" | grep -q "https://${OPERATIONS_FQDN}"; then
+            echo "Published config.js is missing the Operations HTTPS URL."
+            exit 1
+          fi
+          if ! echo "$config_body" | grep -q "https://${FINANCE_FQDN}"; then
+            echo "Published config.js is missing the Finance HTTPS URL."
+            exit 1
+          fi
+          if echo "$config_body" | grep -E -q 'mssql://|Password|DATABASE_URL'; then
+            echo "Published config.js appears to contain a secret."
+            exit 1
+          fi
+          echo "Live UI OK at ${WEBSITE_ENDPOINT}/"

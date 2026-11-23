@@ -18,6 +18,7 @@ from app.bookings import create_booking
 from app.completion import complete_booking
 from app.cors import apply_cors
 from app.db import connect
+from app.request_log import apply_request_logging
 from app.rules import OperationsError
 from app.sessions import create_session, get_session, list_sessions
 
@@ -48,6 +49,7 @@ def database_accepts_a_write() -> bool:
 
 def create_app() -> Flask:
     app = Flask(__name__)
+    apply_request_logging(app)
     apply_cors(app)
 
     @app.get("/health")

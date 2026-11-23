@@ -15,7 +15,7 @@ permissions:
   contents: read
 
 env:
-  IMAGE_SHA: 81b1dc5d1b8c94714201b3fa97715f1017364e59
+  IMAGE_SHA: ${{ github.sha }}
   RESOURCE_GROUP: rg-aserrano
   CONTAINER_APPS_ENVIRONMENT: aserrano-ieu2024-env
   OPERATIONS_APP: aserrano-ieu2024-operations

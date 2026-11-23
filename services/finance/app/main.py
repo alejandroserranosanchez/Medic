@@ -14,6 +14,7 @@ from flask import Flask, jsonify, request
 from app.cors import apply_cors
 from app.db import connect
 from app.receivables import FinanceError, create_receivable, get_balance, get_receivable, record_payment
+from app.request_log import apply_request_logging
 
 
 def database_accepts_a_write() -> bool:
@@ -42,6 +43,7 @@ def database_accepts_a_write() -> bool:
 
 def create_app() -> Flask:
     app = Flask(__name__)
+    apply_request_logging(app)
     apply_cors(app)
 
     @app.get("/health")

@@ -1,29 +1,188 @@
-# Medic
+# Medic (Assignment 2)
 
-Local coursework app for a small private diagnostic clinic: capacity (sessions and bookings without double booking), payment reconciliation, and a simple keep/buy/lease equipment comparison. All data is fictional. The visible name can be overridden with `APP_NAME`.
+Medic is a coursework app for a small private diagnostic clinic. All data is fictional.
 
-Full write-up (SDLC, SMART goals, architecture and database diagrams, testing, AI disclosure): [`docs/report.md`](docs/report.md).
+**Assignment 2** is the current system: two Flask HTTP services (Operations and Finance), each with its own SQL Server database, a static browser UI, Docker Compose locally, and Azure Container Apps plus Azure Storage for the live site.
 
-## Status (2026-10-12, submission)
+**Live UI:** https://aserranoieu2024ui.z28.web.core.windows.net/
 
-Professor use-case approval: **confirmed by student on 2026-10-07**.
+**Repository:** https://github.com/alejandroserranosanchez/Medic
 
-Working:
+The Assignment 1 monolith (one process, SQLite, Jinja screens) remains in the repository for history. See [Legacy: Assignment 1](#legacy-assignment-1) at the end. Do not treat that section as the live architecture.
 
-- Overview, Schedule, Collections and Equipment plans screens, all persisted in SQLite
-- Booking end time calculated on the server from the clinician + procedure profile (or catalogue default)
-- Eligibility checks (ready, availability window, minimum notice) and room/clinician conflict checks
-- Complete booking → exactly one receivable (fee snapshot); payments with unpaid/partial/settled/overpaid and a separate overdue flag
-- A booking can only be marked as done once it has started, with the booking's own session date as the performed date and a due date that is not earlier
-- Keep/buy/lease comparison with save and reopen
+Process write-up: [`ADR.md`](ADR.md), [`AI_USAGE.md`](AI_USAGE.md). Machine-readable contracts: [`system.yaml`](system.yaml), [`system.schema.json`](system.schema.json), and each service’s `openapi.yaml`. The Assignment 1 report stays at [`docs/report.md`](docs/report.md); the Assignment 2 report is a separate deliverable.
 
-- Slot recovery: each session is drawn as a timeline with free gaps; cancelling a booking shows which waiting patients can take the freed slot (ranked by priority, then waiting time) and why the others can't
+## What works today
 
-Suggestions are calculated live and not stored, so the `recovery_proposals` table is still unused. The demo data is seeded relative to the clock: one session for "tomorrow" with free time to fill, and one session from "yesterday" whose booking can be marked as done. If you have an older `data/` folder, delete it (or use a new `DATA_DIR`) to get the current demo data.
+Through the static UI and the two APIs:
 
-## Setup and run
+- Create sessions and bookings in **Operations**
+- Complete a booking in Operations; Operations calls Finance over HTTP to create one receivable (server-side seam)
+- Look up a receivable and record a payment in **Finance**
+- Fees stay in Finance: **GASTRO 12000** cents, **COLONO 18000** cents
 
-Tested with Python 3.10.0 on macOS.
+Not ported into the Assignment 2 APIs or static UI (still only in the Assignment 1 monolith):
+
+- Keep / buy / lease equipment comparison
+- Slot-recovery suggestions and waiting-request ranking
+- Server-rendered Overview / Schedule / Collections screens
+
+## Architecture
+
+```mermaid
+flowchart LR
+  Browser["Browser<br/>ui/ static files"]
+  UI["Azure Storage static website<br/>aserranoieu2024ui<br/>or nginx:8080 locally"]
+  Ops["Operations<br/>Flask · Container App"]
+  Fin["Finance<br/>Flask · Container App"]
+  OpsDB[("Azure SQL / local SQL<br/>operations DB")]
+  FinDB[("Azure SQL / local SQL<br/>finance DB")]
+
+  Browser --> UI
+  Browser -->|"HTTPS JSON + CORS"| Ops
+  Browser -->|"HTTPS JSON + CORS"| Fin
+  Ops -->|"POST /receivables<br/>urllib.request<br/>FINANCE_SERVICE_URL"| Fin
+  Ops --> OpsDB
+  Fin --> FinDB
+```
+
+| Layer | Role |
+|---|---|
+| `ui/` | Static HTML/CSS/JS. `config.js` holds public API base URLs only (no database secrets). |
+| Flask routes (`app/main.py`) | HTTP API: status codes, JSON, CORS from `UI_ORIGIN`. |
+| Business logic (`completion.py`, `receivables.py`, `bookings.py`, …) | Rules the written check asks about. |
+| `finance_client.py` | Operations → Finance with `urllib.request` and a finite timeout. |
+| `pymssql` via `db.py` | Each service talks only to its own database using `DATABASE_URL`. |
+
+## Run locally (Docker Compose)
+
+Requires Docker Desktop. On Apple Silicon, enable Rosetta emulation; the SQL Server image is `linux/amd64`.
+
+```bash
+cp .env.example .env
+# Edit .env: set the three passwords (letters/digits only; see comments in .env.example)
+docker compose up --build
+```
+
+| URL | What |
+|---|---|
+| http://localhost:8080 | Static UI (nginx; not a third domain service) |
+| http://127.0.0.1:8001 | Operations |
+| http://127.0.0.1:8002 | Finance |
+
+Open the UI as **localhost**, not `127.0.0.1` — those are different browser origins and CORS uses `UI_ORIGIN=http://localhost:8080`.
+
+`db/init.sql` (one-off `sql-init` service) creates the `operations` and `finance` databases and one login each. Named volume `medic-sql-data` keeps data across `docker compose down`. `docker compose down -v` deletes the volume.
+
+Quick health check:
+
+```bash
+curl http://127.0.0.1:8001/health
+curl http://127.0.0.1:8002/health
+```
+
+Healthy response shape: `{"status":"ok","db":"ok","version":"<git sha>"}`. A local image without `GIT_SHA` returns `"unknown"`.
+
+### Tests and coverage (per service)
+
+```bash
+cd services/operations   # or services/finance
+pip install -r requirements.txt -r requirements-dev.txt
+ruff check .
+pytest --cov=app --cov-report=term-missing --cov-fail-under=70
+```
+
+CI runs the same pattern against a SQL Server service container. It never opens Azure SQL.
+
+## Environment variables and secrets
+
+Documented fully in [`system.yaml`](system.yaml). Summary:
+
+| Variable | Who | Notes |
+|---|---|---|
+| `DATABASE_URL` | Both | Secret. Connection string for that service’s database only. |
+| `PORT` | Both | Default `8000` inside the container. |
+| `GIT_SHA` | Both | Stamped at image build; returned by `/health`. Default `unknown`. |
+| `UI_ORIGIN` | Both | Allowed browser origin for CORS. Empty = no browser origin accepted. Compose: `http://localhost:8080`. Azure: Storage website origin **without** a trailing slash. |
+| `FINANCE_SERVICE_URL` | Operations | Base URL of Finance. Application default is empty (unconfigured). Compose sets `http://finance:8000`. Azure sets the Finance HTTPS FQDN. |
+| `FINANCE_TIMEOUT_SECONDS` | Operations | Default `3`. Invalid values fall back to 3. |
+| `TZ` | Both | Compose and Azure set `Europe/Madrid`. When unset, containers use UTC. |
+
+Local Compose passwords live only in `.env` (gitignored). On Azure, `DATABASE_URL` is a Container Apps secret referenced as `secretref:database-url`, not a plain env value in the portal definition. GitHub Actions uses OIDC (`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`) plus database URL secrets for deploy. Do not put secrets in `ui/config.js`, source, Compose, or images.
+
+## Migrations and persistence
+
+Each service has numbered SQL files under `services/<name>/migrations/`. On startup, `apply_migrations()` runs pending files in order and records filenames in `schema_migrations`. A second boot applies nothing. Applied files are not edited.
+
+| Service | Files |
+|---|---|
+| Operations | `001_sessions.sql`, `002_bookings.sql`, `003_completion_state.sql` |
+| Finance | `001_receivables.sql`, `002_payments.sql`, `003_fee_assumptions.sql` |
+
+`003_completion_state.sql` alters existing `bookings` rows (nullable `finance_receivable_id`, status `completion_pending`) without dropping the table. Recovery for a bad migration is manual (see ADR-7): inspect, repair or restore, then a new forward migration.
+
+## Cross-seam completion (partial failure)
+
+1. Operations marks the booking `completion_pending`.
+2. It calls Finance `POST /receivables` with booking id, procedure and dates (not the fee).
+3. Finance looks up the fee catalogue and stores the snapshot. `source_booking_id` is unique.
+4. On HTTP 200/201, Operations stores `finance_receivable_id` and marks the booking `completed`.
+5. Connection refused on the first attempt → booking returns to `active`, HTTP 503.
+6. Timeout / drop / HTTP 5xx → stays `completion_pending`, HTTP 503. Retry the same completion; Finance returns the existing receivable when details match (no second charge). Conflicting details → HTTP 409.
+
+Stopping Finance with Compose leaves Operations domain APIs and `/health` working; completion fails in the designed way above.
+
+## CI and CD
+
+| Workflow | Trigger | What it does |
+|---|---|---|
+| [`ci.yml`](.github/workflows/ci.yml) | Every push and pull request | Validate `system.yaml` + OpenAPI; Ruff + pytest with coverage ≥70% per service against SQL Server; build both images; on **main** only, push to GHCR as `ghcr.io/alejandroserranosanchez/medic-<service>:<full commit SHA>` |
+| [`deploy-azure.yml`](.github/workflows/deploy-azure.yml) | **Manual** `workflow_dispatch` from **main** | Deploy the current commit’s SHA-tagged images to the two Container Apps; set `FINANCE_SERVICE_URL`; verify scale 0–1 and secret refs; poll both `/health` until `status`/`db`/`version` match the SHA |
+| [`deploy-ui.yml`](.github/workflows/deploy-ui.yml) | **Manual** `workflow_dispatch` from **main** | Confirm Storage account `aserranoieu2024ui` and static website; write `ui/config.js` from live FQDNs; set both apps’ `UI_ORIGIN`; upload `ui/` to `$web` with Azure CLI `--auth-mode login`; verify HTTP 200 and published `config.js` |
+
+Honest gap versus the brief’s “every merge to main is deployed with no manual steps”: image **publish** is automatic on main; **Azure deploy** and **UI upload** are intentional manual workflows so a known SHA is pinned and cold-start health can be checked. Changes reach main through pull requests.
+
+## Azure layout (student resources)
+
+| Resource | Name |
+|---|---|
+| Resource group | `rg-aserrano` (personal Students subscription; class shared groups were not used — grading risk vs brief §7) |
+| Container Apps environment | `aserrano-ieu2024-env` |
+| Operations app | `aserrano-ieu2024-operations` |
+| Finance app | `aserrano-ieu2024-finance` |
+| SQL server | `aserrano-ieu2024-sql` |
+| Databases | `aserrano-ieu2024-operations-db`, `aserrano-ieu2024-finance-db` |
+| UI hosting | Storage account `aserranoieu2024ui` static website (not Static Web Apps: SWA create in West Europe returned `RequestDisallowedByAzure`) |
+| Registry | GHCR (`ghcr.io/alejandroserranosanchez`) |
+
+Initial resource creation was done once with Azure CLI / portal under that prefix. Later image and UI updates go through the workflows above. The Deploy UI workflow needs **Storage Blob Data Contributor** on `aserranoieu2024ui` for the GitHub OIDC principal; it does not use account keys.
+
+## Health and version check
+
+```bash
+# Replace with the live Container App FQDNs from Azure or system.yaml / portal
+curl -sS "https://<operations-fqdn>/health"
+curl -sS "https://<finance-fqdn>/health"
+```
+
+Expect HTTP 200 and JSON with `"status":"ok"`, `"db":"ok"`, and `"version"` equal to the deployed image’s commit SHA. Health only checks that service’s own database (read and write), not the peer service.
+
+## Known limitations
+
+- CD to Azure and UI deploy are manual (`workflow_dispatch`), not automatic on every main merge.
+- Resource group is personal `rg-aserrano`, not the class `rg-sdd-3a` / `rg-sdd-3b` named in the brief.
+- UI is Azure Storage static website; Static Web Apps was blocked on this subscription (see ADR-8). The provided `system.schema.json` models `storage_account`.
+- Assignment 1 equipment comparison and slot recovery are not in the Assignment 2 services or static UI.
+- The static UI remembers bookings created in that browser session; Operations has no booking-list endpoint.
+- First request after idle can be slow (cold start + SQL auto-resume, Azure error 40613).
+- No automatic migration rollback; bad migrations need manual repair (ADR-7).
+- No `submission` tag is documented here until it is created for the graded commit.
+
+---
+
+## Legacy: Assignment 1
+
+Single-process Flask app with Jinja screens and one SQLite file. Useful for the Assignment 1 report and for comparing the split. **Not** the deployed Assignment 2 system.
 
 ```bash
 python3 -m venv .venv
@@ -32,115 +191,15 @@ python -m pip install -r requirements.txt
 python app.py
 ```
 
-Open `http://127.0.0.1:8000` (the server binds `0.0.0.0`). No interactive setup: the schema and fictional seed data are created automatically on first start.
+Open `http://127.0.0.1:8000`. Schema and fictional seed are created on first start. Variables: `PORT` (8000), `DATA_DIR` (`./data`), `APP_NAME`, `SECRET_KEY`, optional `DEMO_NOW`.
 
-| Variable | Default | Meaning |
-|---|---|---|
-| `PORT` | `8000` | HTTP port |
-| `DATA_DIR` | `./data` | Directory for the SQLite file |
-| `APP_NAME` | `Medic` | Visible product name |
-| `SECRET_KEY` | `medic-dev-only` | Flask flash messages |
-| `DEMO_NOW` | *(unset = real clock)* | Fixed planning clock, format `YYYY-MM-DDTHH:MM:SS` |
-
-Database path: `DATA_DIR/clinic.sqlite3`. Seed data is inserted only when `procedure_types` is empty, so a later start does not insert the demo rows again and does not delete bookings added from the forms.
-
-## Run in the provided container
-
-`Dockerfile` is the Assignment 1 template with its four marked lines filled: `python:3.12-slim`, install `requirements.txt`, copy `app.py` and `clinic/`, and start `python app.py`. The template sets `DATA_DIR=/data`. Docker Desktop must be running.
+Optional Assignment 1 container (professor template):
 
 ```bash
 docker build -t medic .
 docker run --rm -p 8000:8000 -v medic-data:/data medic
 ```
 
-Open `http://localhost:8000`. Inside the container the database file is `/data/clinic.sqlite3`, on the volume `medic-data`. On the laptop, with `DATA_DIR` unset, the file is `data/clinic.sqlite3` in the project. Those are different folders.
+Layout from that phase: `app.py`, `clinic/` (operations + finance modules + `application.py` for one-SQLite-transaction completion), `tests/`, [`docs/report.md`](docs/report.md).
 
-A local start on 22 October 2026 built the image, answered HTTP 200, and created `/data/clinic.sqlite3`. The graded checker is still to be pasted here:
-
-```bash
-./container/run.sh /path/to/Medic
-```
-
-Run that from a clone of the professor's `sdd-assignment-1` repository. The passing output belongs under this heading.
-
-## Local SQL Server for Assignment 2
-
-This Compose file starts SQL Server, creates the `operations` and `finance` databases, and starts a small service for each. Operations answers health, sessions, and bookings. Completing a booking calls Finance at `FINANCE_SERVICE_URL` and waits at most `FINANCE_TIMEOUT_SECONDS` (3 seconds in Compose). Finance answers health and, on startup, creates its receivables, payments, and the established fee catalogue. GASTRO stays 12000 cents and COLONO stays 18000 cents. Finance does not ask Operations whether the booking exists. The original clinic program still keeps the SQLite copy of payments:
-
-```bash
-python app.py
-```
-
-On an Apple Silicon Mac, enable Rosetta emulation in Docker Desktop. The image is `linux/amd64`.
-
-```bash
-cp .env.example .env
-```
-
-Edit `.env` and replace the three passwords. Then:
-
-```bash
-docker compose up --build
-```
-
-The first start downloads SQL Server, which can take several minutes. `db/init.sql` creates the databases and one login each. A named volume, `medic-sql-data`, keeps those files. The next `docker compose up` reuses them. The script can run again without deleting rows.
-
-`docker compose down` stops the containers and keeps the volume. `docker compose down -v` deletes the volume and the databases with it.
-
-The administrator password is only for this local server and the init script. `operations_user` can use `operations`. `finance_user` can use `finance`. Neither login is a user in the other database.
-
-Operations is published on port 8001 and Finance on port 8002. The static clinic page is served by nginx at http://localhost:8080. Compose sets `UI_ORIGIN` to that address on both services. Open the page as localhost, not 127.0.0.1, because those are different browser origins. `ui/config.js` holds the public service addresses and no database credentials. Compose and the Azure deploy workflows set `TZ=Europe/Madrid` so booking start checks use clinic-local time, not UTC. Inside Compose they call SQL Server by the name `sqlserver`, not `localhost`. When the Operations container starts, it applies `001_sessions.sql` and `002_bookings.sql` once and records each filename. When the Finance container starts, it applies `001_receivables.sql` and `002_payments.sql` the same way. A second start skips the files already recorded. `GET /health` reads and writes that service's own database and returns `{"status":"ok","db":"ok","version":"<git sha>"}`. The image receives the SHA as `GIT_SHA`. A local build without that value returns `unknown`.
-
-```bash
-curl http://127.0.0.1:8001/health
-curl http://127.0.0.1:8002/health
-curl -X POST http://127.0.0.1:8001/sessions \
-  -H 'Content-Type: application/json' \
-  -d '{"room_label":"Room A","clinician_label":"Dr. Vega","session_date":"2026-11-20","start_time":"09:00","end_time":"12:00"}'
-```
-
-Service checks, from each service folder:
-
-```bash
-pip install -r requirements.txt -r requirements-dev.txt
-ruff check .
-pytest
-```
-
-## Testing and coverage
-
-```bash
-python -m pytest
-```
-
-Coverage of core business logic (fails if below 70%):
-
-```bash
-python -m pytest --cov=clinic.operations --cov=clinic.finance --cov=clinic.application --cov=clinic.timeutil --cov-report=term-missing --cov-fail-under=70
-```
-
-Measured on 2026-10-12 (Python 3.10.0, pytest 9.0.2, pytest-cov 7.1.0):
-
-| Scope | Coverage |
-|---|---|
-| Combined core logic (command above) | 83.65% |
-| Operations domain only (`--cov=clinic.operations`) | 83.51% |
-| Finance domain only (`--cov=clinic.finance`) | 82.65% |
-
-Result: `53 passed`.
-
-## Layout
-
-- `app.py` — start command
-- `clinic/__init__.py` — app factory and configuration from environment
-- `clinic/db.py`, `clinic/schema.sql`, `clinic/seed.py` — SQLite connection, schema, migration, fictional seed
-- `clinic/operations/` — Operations domain: sessions, requests, bookings (routes / service rules / repository SQL)
-- `clinic/finance/` — Finance domain: receivables, payments, investment comparison
-- `clinic/application.py` — `complete_booking`, the one action that writes to both domains in a single transaction
-- `tests/` — unit, SQLite integration and HTTP tests
-- `ADR.md`, `AI_USAGE.md`, `PROJECT_BRIEF.md`, `ACCEPTANCE_CRITERIA.md`, `docs/report.md`
-
-## Assignment notes
-
-- Single process, one SQLite file, one root `requirements.txt`
-- The Dockerfile is the provided template with its four marked lines filled. No Compose file, CI workflow, or infrastructure-as-code is part of this submission.
+Coverage figures from 2026-10-12 (Assignment 1 submission): 53 tests, about 83% combined core logic. Those numbers are historical; Assignment 2 coverage is measured per service under `services/*/`.

@@ -49,6 +49,7 @@ def apply_migrations(conn=None) -> list[str]:
             cursor.execute("INSERT INTO dbo.schema_migrations (id) VALUES (%s)", (path.name,))
             conn.commit()
             applied.append(path.name)
+            print(f"Applied migration: {path.name}", flush=True)
         return applied
     finally:
         if close:

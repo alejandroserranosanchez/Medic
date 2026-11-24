@@ -11,6 +11,13 @@ from app.migrate import apply_migrations, split_batches
 
 MIGRATIONS = Path(__file__).resolve().parents[1] / "migrations"
 
+ALL_MIGRATIONS = [
+    "001_receivables.sql",
+    "002_payments.sql",
+    "003_fee_assumptions.sql",
+    "004_receivable_currency.sql",
+]
+
 
 def test_go_on_its_own_line_splits_batches():
     assert split_batches("SELECT 1\nGO\n\nGO\nSELECT 2\n") == ["SELECT 1", "SELECT 2"]
@@ -24,6 +31,9 @@ def test_sql_files_keep_the_booking_reference_inside_finance():
     assert "operations.dbo" not in lowered
     assert "expected_fee_cents" in lowered
     assert "amount_cents" in lowered
+    assert "currency_code" in lowered
+    assert "df_receivables_currency_code" in lowered
+    assert "ck_receivables_currency_code" in lowered
 
 
 class _Cursor:
@@ -59,13 +69,17 @@ class _Connection:
         return None
 
 
-def test_runner_applies_each_file_once():
+def test_runner_applies_each_file_once(capsys):
     connection = _Connection()
     first = apply_migrations(connection)
     second = apply_migrations(connection)
-    assert first == ["001_receivables.sql", "002_payments.sql", "003_fee_assumptions.sql"]
+    assert first == ALL_MIGRATIONS
     assert second == []
-    assert connection.applied == ["001_receivables.sql", "002_payments.sql", "003_fee_assumptions.sql"]
+    assert connection.applied == ALL_MIGRATIONS
+    logged = capsys.readouterr().out
+    for name in ALL_MIGRATIONS:
+        assert f"Applied migration: {name}" in logged
+    assert logged.count("Applied migration:") == 4
 
 
 def _insert_receivable(cursor, booking_id=41):
@@ -82,10 +96,34 @@ def _insert_receivable(cursor, booking_id=41):
     return cursor.fetchone()[0]
 
 
+def _ensure_schema_migrations(cursor, connection):
+    cursor.execute(
+        """
+        IF OBJECT_ID(N'dbo.schema_migrations', N'U') IS NULL
+        CREATE TABLE dbo.schema_migrations (
+            id NVARCHAR(200) NOT NULL PRIMARY KEY,
+            applied_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+        )
+        """
+    )
+    connection.commit()
+
+
+def _apply_sql_files(connection, names: list[str]) -> None:
+    cursor = connection.cursor()
+    _ensure_schema_migrations(cursor, connection)
+    for name in names:
+        path = MIGRATIONS / name
+        for batch in split_batches(path.read_text(encoding="utf-8")):
+            cursor.execute(batch)
+        cursor.execute("INSERT INTO dbo.schema_migrations (id) VALUES (%s)", (name,))
+        connection.commit()
+
+
 def test_saved_money_survives_reconnect_and_a_second_migration(finance_database):
     from app.db import connect
 
-    assert apply_migrations() == ["001_receivables.sql", "002_payments.sql", "003_fee_assumptions.sql"]
+    assert apply_migrations() == ALL_MIGRATIONS
     first = connect()
     try:
         cursor = first.cursor()
@@ -106,19 +144,140 @@ def test_saved_money_survives_reconnect_and_a_second_migration(finance_database)
         assert apply_migrations(second) == []
         cursor = second.cursor()
         cursor.execute(
-            "SELECT source_booking_id, expected_fee_cents FROM dbo.receivables WHERE id = %s",
+            """
+            SELECT source_booking_id, expected_fee_cents, currency_code
+            FROM dbo.receivables WHERE id = %s
+            """,
             (receivable_id,),
         )
-        assert cursor.fetchone() == (41, 12000)
+        assert cursor.fetchone() == (41, 12000, "EUR")
         cursor.execute(
             "SELECT amount_cents FROM dbo.payments WHERE receivable_id = %s",
             (receivable_id,),
         )
         assert cursor.fetchone() == (9000,)
         cursor.execute("SELECT COUNT(*) FROM dbo.schema_migrations")
-        assert cursor.fetchone()[0] == 3
+        assert cursor.fetchone()[0] == 4
     finally:
         second.close()
+
+
+def test_currency_migration_preserves_populated_receivable_and_payment(finance_database, capsys):
+    """§4 style: change a populated table in place; rows and payments stay."""
+    from app.db import connect
+
+    connection = connect()
+    try:
+        _apply_sql_files(
+            connection,
+            ["001_receivables.sql", "002_payments.sql", "003_fee_assumptions.sql"],
+        )
+        cursor = connection.cursor()
+        receivable_id = _insert_receivable(cursor, booking_id=77)
+        cursor.execute(
+            """
+            INSERT INTO dbo.payments (receivable_id, payment_reference, amount_cents, paid_date)
+            VALUES (%s, N'PAY-CURRENCY', 4500, '2026-11-21')
+            """,
+            (receivable_id,),
+        )
+        connection.commit()
+        cursor.execute(
+            """
+            SELECT id, source_booking_id, procedure_code, performed_date, due_date, expected_fee_cents
+            FROM dbo.receivables WHERE id = %s
+            """,
+            (receivable_id,),
+        )
+        before = cursor.fetchone()
+        # pymssql may return date objects for DATE columns
+        assert before[0] == receivable_id
+        assert before[1] == 77
+        assert str(before[2]).strip() == "GASTRO"
+        assert str(before[3])[:10] == "2026-11-20"
+        assert str(before[4])[:10] == "2026-12-20"
+        assert before[5] == 12000
+        cursor.execute(
+            """
+            SELECT payment_reference, amount_cents, paid_date
+            FROM dbo.payments WHERE receivable_id = %s
+            """,
+            (receivable_id,),
+        )
+        payment_before = cursor.fetchone()
+        assert str(payment_before[0]).strip() == "PAY-CURRENCY"
+        assert payment_before[1] == 4500
+        assert str(payment_before[2])[:10] == "2026-11-21"
+    finally:
+        connection.close()
+
+    applied = apply_migrations()
+    assert applied == ["004_receivable_currency.sql"]
+    assert "Applied migration: 004_receivable_currency.sql" in capsys.readouterr().out
+
+    after = connect()
+    try:
+        cursor = after.cursor()
+        cursor.execute(
+            """
+            SELECT id, source_booking_id, procedure_code, performed_date, due_date,
+                   expected_fee_cents, currency_code
+            FROM dbo.receivables WHERE id = %s
+            """,
+            (receivable_id,),
+        )
+        row = cursor.fetchone()
+        assert row[0] == receivable_id
+        assert row[1] == 77
+        assert str(row[2]).strip() == "GASTRO"
+        assert str(row[3])[:10] == "2026-11-20"
+        assert str(row[4])[:10] == "2026-12-20"
+        assert row[5] == 12000
+        assert str(row[6]).strip() == "EUR"
+
+        cursor.execute(
+            """
+            SELECT payment_reference, amount_cents, paid_date
+            FROM dbo.payments WHERE receivable_id = %s
+            """,
+            (receivable_id,),
+        )
+        payment_after = cursor.fetchone()
+        assert str(payment_after[0]).strip() == "PAY-CURRENCY"
+        assert payment_after[1] == 4500
+        assert str(payment_after[2])[:10] == "2026-11-21"
+
+        new_id = _insert_receivable(cursor, booking_id=88)
+        after.commit()
+        cursor.execute(
+            "SELECT currency_code, expected_fee_cents FROM dbo.receivables WHERE id = %s",
+            (new_id,),
+        )
+        currency, fee = cursor.fetchone()
+        assert str(currency).strip() == "EUR"
+        assert fee == 12000
+
+        with pytest.raises(pymssql.IntegrityError):
+            cursor.execute(
+                """
+                INSERT INTO dbo.receivables (
+                    source_booking_id, procedure_code, performed_date, due_date,
+                    expected_fee_cents, currency_code
+                ) VALUES (89, N'GASTRO', '2026-11-20', '2026-12-20', 12000, 'USD')
+                """
+            )
+        after.rollback()
+
+        assert apply_migrations(after) == []
+        cursor.execute(
+            "SELECT COUNT(*) FROM dbo.schema_migrations WHERE id = %s",
+            ("004_receivable_currency.sql",),
+        )
+        assert cursor.fetchone()[0] == 1
+        cursor.execute("SELECT COUNT(*) FROM dbo.schema_migrations")
+        assert cursor.fetchone()[0] == 4
+    finally:
+        after.close()
 
 
 def test_money_rules_are_rejected_by_the_database(finance_database):

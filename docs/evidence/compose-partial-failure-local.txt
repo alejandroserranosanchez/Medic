@@ -1,0 +1,83 @@
+ Container medic-finance-1 Stopping 
+ Container medic-finance-1 Stopped 
+ Container medic-sqlserver-1 Waiting 
+ Container medic-sqlserver-1 Healthy 
+ Container medic-sql-init-1 Starting 
+ Container medic-sql-init-1 Started 
+ Container medic-sql-init-1 Waiting 
+ Container medic-sql-init-1 Exited 
+ Container medic-finance-1 Starting 
+ Container medic-finance-1 Started 
+=== Compose partial-failure demo 2026-11-24T17:42:16Z ===
+NOTE: local Docker Compose SQL + HTTP only; Azure not used
+NOTE: past booking inserted via SQL because the HTTP booking API
+      rejects past slots (insufficient_notice when start < now).
+
+--- Preflight health ---
+operations (200, {'db': 'ok', 'status': 'ok', 'version': 'unknown'})
+finance (200, {'db': 'ok', 'status': 'ok', 'version': 'unknown'})
+
+Created fictional past booking id=4 session_id=7 date=2026-11-23
+
+--- Stop Finance only ---
+finance stopped
+finance probe None {'error': 'URLError: <urlopen error [Errno 61] Connection refused>'}
+
+--- Complete while Finance down ---
+HTTP 503
+{
+  "booking_status": "completion_pending",
+  "error": "finance result is unknown; the booking stays completion_pending"
+}
+
+--- Operations /health while Finance down ---
+HTTP 200
+{
+  "db": "ok",
+  "status": "ok",
+  "version": "unknown"
+}
+
+booking_status_after_failure= completion_pending
+
+--- Restart Finance ---
+wait 1 => None
+Finance healthy attempt 2: {'db': 'ok', 'status': 'ok', 'version': 'unknown'}
+
+--- Retry identical completion ---
+HTTP 200
+{
+  "booking_id": 4,
+  "due_date": "2026-11-23",
+  "expected_fee_cents": 12000,
+  "outcome": "created",
+  "performed_date": "2026-11-23",
+  "procedure_code": "GASTRO",
+  "receivable_id": 4,
+  "status": "completed"
+}
+
+--- Fetch receivable ---
+HTTP 200
+{
+  "due_date": "2026-11-23",
+  "expected_fee_cents": 12000,
+  "id": 4,
+  "performed_date": "2026-11-23",
+  "procedure_code": "GASTRO",
+  "source_booking_id": 4
+}
+
+--- Third identical completion (no duplicate receivable) ---
+HTTP 200
+{
+  "booking_id": 4,
+  "outcome": "already_completed",
+  "performed_date": "2026-11-23",
+  "procedure_code": "GASTRO",
+  "receivable_id": 4,
+  "status": "completed"
+}
+same_receivable_id= True id= 4
+
+=== END DEMO ===

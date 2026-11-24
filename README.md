@@ -134,13 +134,17 @@ Stopping Finance with Compose leaves Operations domain APIs and `/health` workin
 
 ## CI and CD
 
+Pipeline on **push to `main`** (pull requests stop after tests + image **build**, with no push and no Azure):
+
+**contracts + test → images (GHCR SHA tags) → Deploy Azure (backend) → Deploy UI**
+
 | Workflow | Trigger | What it does |
 |---|---|---|
-| [`ci.yml`](.github/workflows/ci.yml) | Every push and pull request | Validate `system.yaml` + OpenAPI; Ruff + pytest with coverage ≥70% per service against SQL Server; build both images; on **main** only, push to GHCR as `ghcr.io/alejandroserranosanchez/medic-<service>:<full commit SHA>` |
-| [`deploy-azure.yml`](.github/workflows/deploy-azure.yml) | **Manual** `workflow_dispatch` from **main** | Deploy the current commit’s SHA-tagged images to the two Container Apps; set `FINANCE_SERVICE_URL`; verify scale 0–1 and secret refs; poll both `/health` until `status`/`db`/`version` match the SHA |
-| [`deploy-ui.yml`](.github/workflows/deploy-ui.yml) | **Manual** `workflow_dispatch` from **main** | Confirm Storage account `aserranoieu2024ui` and static website; write `ui/config.js` from live FQDNs; set both apps’ `UI_ORIGIN`; upload `ui/` to `$web` with Azure CLI `--auth-mode login`; verify HTTP 200 and published `config.js` |
+| [`ci.yml`](.github/workflows/ci.yml) | Every push and pull request | Validate `system.yaml` + OpenAPI; Ruff + pytest with coverage ≥70% per service against SQL Server; build both images; on **main** only, push to GHCR as `ghcr.io/alejandroserranosanchez/medic-<service>:<full commit SHA>`, then call production CD for **that same commit** |
+| [`deploy-azure.yml`](.github/workflows/deploy-azure.yml) | `workflow_call` from CI on main only | Guard (skip if not tip of `main`) → deploy both Container Apps to the SHA tags → poll `/health` until `status`/`db`/`version` match the SHA → call Deploy UI |
+| [`deploy-ui.yml`](.github/workflows/deploy-ui.yml) | `workflow_call` from Deploy Azure only | Check out `ui/` at the **same** `image_sha`, write `config.js` from live FQDNs, set `UI_ORIGIN`, upload to `$web` with `--auth-mode login`, verify HTTP 200 |
 
-Honest gap versus the brief’s “every merge to main is deployed with no manual steps”: image **publish** is automatic on main; **Azure deploy** and **UI upload** are intentional manual workflows so a known SHA is pinned and cold-start health can be checked. Changes reach main through pull requests.
+Production CD uses one concurrency group `medic-production-cd` on the Deploy Azure workflow run, so another commit cannot start deploying until that run’s backend **and** UI have finished (or been skipped together). There is no `workflow_dispatch`: if CD fails, use **Re-run failed jobs** on that CI run. A run whose commit is no longer the tip of `main` skips backend and UI together. Changes reach `main` through pull requests.
 
 ## Azure layout (student resources)
 
@@ -169,7 +173,6 @@ Expect HTTP 200 and JSON with `"status":"ok"`, `"db":"ok"`, and `"version"` equa
 
 ## Known limitations
 
-- CD to Azure and UI deploy are manual (`workflow_dispatch`), not automatic on every main merge.
 - Resource group is personal `rg-aserrano`, not the class `rg-sdd-3a` / `rg-sdd-3b` named in the brief.
 - UI is Azure Storage static website; Static Web Apps was blocked on this subscription (see ADR-8). The provided `system.schema.json` models `storage_account`.
 - Assignment 1 equipment comparison and slot recovery are not in the Assignment 2 services or static UI.

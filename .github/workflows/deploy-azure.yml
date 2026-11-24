@@ -1,38 +1,70 @@
-# Deploy the two published images into the existing student environment.
-# Run it by hand from main. It does not build an image and does not create a new environment.
+# Production CD for both Container Apps, then the static UI.
+# Called only from CI on main after SHA-tagged images are published.
+# Retry a failed deploy with GitHub Actions "Re-run failed jobs" on that CI run.
+# concurrency covers this whole workflow run (backend + nested UI), so another
+# main commit cannot interleave between backend and UI.
 
 name: Deploy Azure
 
 on:
-  workflow_dispatch:
+  workflow_call:
+    inputs:
+      image_sha:
+        description: Full commit SHA whose medic-operations and medic-finance images to deploy
+        type: string
+        required: true
 
 concurrency:
-  group: deploy-azure
+  group: medic-production-cd
   cancel-in-progress: false
 
 permissions:
   id-token: write
   contents: read
+  packages: read
 
 env:
-  IMAGE_SHA: ${{ github.sha }}
+  IMAGE_SHA: ${{ inputs.image_sha }}
   RESOURCE_GROUP: rg-aserrano
   CONTAINER_APPS_ENVIRONMENT: aserrano-ieu2024-env
   OPERATIONS_APP: aserrano-ieu2024-operations
   FINANCE_APP: aserrano-ieu2024-finance
 
 jobs:
-  deploy:
+  guard:
     runs-on: ubuntu-latest
+    outputs:
+      deploy: ${{ steps.tip.outputs.deploy }}
     steps:
       - name: Refuse a deployment that is not from main
         shell: bash
         run: |
           if [ "$GITHUB_REF" != "refs/heads/main" ]; then
-            echo "Refusing deployment. Run this workflow from main."
+            echo "Refusing deployment. Production CD runs only from main."
             exit 1
           fi
 
+      - name: Deploy only if this commit is still the tip of main
+        id: tip
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tip="$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq .sha)"
+          if [ "$IMAGE_SHA" != "$tip" ]; then
+            echo "Skipping stale production deploy of ${IMAGE_SHA}; main tip is ${tip}."
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Deploying tip ${IMAGE_SHA}."
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  deploy:
+    needs: [guard]
+    if: needs.guard.outputs.deploy == 'true'
+    runs-on: ubuntu-latest
+    steps:
       - name: Sign in to Azure
         uses: azure/login@v2
         with:
@@ -287,3 +319,15 @@ jobs:
             echo "Deployment is not healthy."
             exit 1
           fi
+
+  # Nested under this workflow's concurrency group (do not give deploy-ui its own).
+  deploy-ui:
+    needs: [guard, deploy]
+    if: needs.guard.outputs.deploy == 'true' && needs.deploy.result == 'success'
+    permissions:
+      id-token: write
+      contents: read
+    uses: ./.github/workflows/deploy-ui.yml
+    with:
+      image_sha: ${{ inputs.image_sha }}
+    secrets: inherit

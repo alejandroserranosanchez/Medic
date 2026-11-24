@@ -1,16 +1,24 @@
-# Deploy the static clinic page to the existing Azure Storage static website.
-# Run it by hand from main. It does not create a Storage account or rebuild images.
+# Upload ui/ for one production commit. Called only from deploy-azure.yml after
+# the backend for the same image_sha is healthy. No standalone trigger: retry via
+# Re-run failed jobs on the parent CI run. No concurrency group here — the parent
+# Deploy Azure workflow holds the production CD lock for the full backend+UI sequence.
 
 name: Deploy UI
 
 on:
-  workflow_dispatch:
+  workflow_call:
+    inputs:
+      image_sha:
+        description: Exact commit SHA of the backend images just deployed; ui/ is checked out at this SHA
+        type: string
+        required: true
 
 permissions:
   id-token: write
   contents: read
 
 env:
+  IMAGE_SHA: ${{ inputs.image_sha }}
   RESOURCE_GROUP: rg-aserrano
   STORAGE_ACCOUNT: aserranoieu2024ui
   OPERATIONS_APP: aserrano-ieu2024-operations
@@ -24,11 +32,14 @@ jobs:
         shell: bash
         run: |
           if [ "$GITHUB_REF" != "refs/heads/main" ]; then
-            echo "Refusing deployment. Run this workflow from main."
+            echo "Refusing deployment. Production CD runs only from main."
             exit 1
           fi
 
-      - uses: actions/checkout@v4
+      - name: Check out ui/ at the deployed backend SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.image_sha }}
 
       - name: Sign in to Azure
         uses: azure/login@v2
@@ -127,6 +138,7 @@ jobs:
           fi
 
           echo "UI_ORIGIN=${origin}"
+          echo "Checked out and publishing UI for IMAGE_SHA=${IMAGE_SHA}"
           echo "WEBSITE_ENDPOINT=${website_endpoint}" >> "$GITHUB_ENV"
           echo "OPERATIONS_FQDN=${operations_fqdn}" >> "$GITHUB_ENV"
           echo "FINANCE_FQDN=${finance_fqdn}" >> "$GITHUB_ENV"
@@ -203,4 +215,4 @@ jobs:
             echo "Published config.js appears to contain a secret."
             exit 1
           fi
-          echo "Live UI OK at ${WEBSITE_ENDPOINT}/"
+          echo "Live UI OK at ${WEBSITE_ENDPOINT}/ (backend IMAGE_SHA=${IMAGE_SHA})"

@@ -3,7 +3,12 @@ name: CI
 on:
   push:
   pull_request:
-  workflow_call:
+
+# On pull requests, cancel superseded runs. On main, never cancel: a mid-flight
+# deploy must finish before the next production deploy starts (see medic-production-cd).
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   contracts:
@@ -131,3 +136,18 @@ jobs:
           cache-to: ${{ github.ref == 'refs/heads/main' && 'type=gha,mode=max' || '' }}
           # A plain image. The attestation wrapper is often rejected by Azure Container Apps.
           provenance: false
+
+  # CD only on push to main, after the same-commit images job published both SHA tags.
+  # Pull requests never reach this job. deploy-azure.yml runs backend then UI under one
+  # concurrency group; retry failures with "Re-run failed jobs" on this CI run.
+  deploy:
+    needs: [images]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      id-token: write
+      contents: read
+      packages: read
+    uses: ./.github/workflows/deploy-azure.yml
+    with:
+      image_sha: ${{ github.sha }}
+    secrets: inherit

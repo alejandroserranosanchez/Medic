@@ -1,0 +1,19 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.12.16, pytest-9.0.2, pluggy-1.7.0 -- /Users/alejandroserrano/CURSOR/MEDIC (DevOps)/Medic/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/alejandroserrano/CURSOR/MEDIC (DevOps)/Medic/services/operations
+configfile: pytest.ini
+plugins: cov-7.1.0
+collecting ... collected 9 items
+
+tests/test_finance_client.py::test_connection_refused_and_timeout_are_distinct PASSED [ 11%]
+tests/test_completion.py::test_lost_or_refused_finance_call[failure0-503-active] PASSED [ 22%]
+tests/test_completion.py::test_lost_or_refused_finance_call[failure1-503-completion_pending] PASSED [ 33%]
+tests/test_completion.py::test_lost_or_refused_finance_call[failure2-503-completion_pending] PASSED [ 44%]
+tests/test_completion.py::test_timeout_then_matching_reply_completes_once PASSED [ 55%]
+tests/test_completion.py::test_finance_outage_does_not_fail_operations_health PASSED [ 66%]
+tests/test_completion.py::test_successful_completion_stores_the_finance_id PASSED [ 77%]
+tests/test_completion.py::test_completion_migration_keeps_an_existing_booking PASSED [ 88%]
+tests/test_completion.py::test_real_finance_service_creates_one_receivable PASSED [100%]
+
+============================== 9 passed in 1.67s ===============================

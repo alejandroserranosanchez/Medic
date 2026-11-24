@@ -1,0 +1,12 @@
+{"TimeStamp": "2026-11-24T19:18:50.6212", "Log": "Connecting to the container 'aserrano-ieu2024-finance'..."}
+{"TimeStamp": "2026-11-24T19:18:50.73897", "Log": "Successfully Connected to container: 'aserrano-ieu2024-finance' [Revision: 'aserrano-ieu2024-finance--latest', Replica: 'aserrano-ieu2024-finance--latest-5b3cfbd5-46b6-4ef5-8179-783b2a3e14af']"}
+{"TimeStamp": "2026-11-24T19:18:41.3516094+00:00", "Log": "* Serving Flask app 'main'"}
+{"TimeStamp": "2026-11-24T19:18:41.3516094+00:00", "Log": "* Debug mode: off"}
+{"TimeStamp": "2026-11-24T19:18:41.3614855+00:00", "Log": "\u001b[31m\u001b[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.\u001b[0m"}
+{"TimeStamp": "2026-11-24T19:18:41.3614855+00:00", "Log": "* Running on all addresses (0.0.0.0)"}
+{"TimeStamp": "2026-11-24T19:18:41.3614855+00:00", "Log": "* Running on http://127.0.0.1:8000"}
+{"TimeStamp": "2026-11-24T19:18:41.3614855+00:00", "Log": "* Running on http://169.254.0.2:8000"}
+{"TimeStamp": "2026-11-24T19:18:41.3617882+00:00", "Log": "\u001b[33mPress CTRL+C to quit\u001b[0m"}
+{"TimeStamp": "2026-11-24T19:18:41.8375125+00:00", "Log": "GET / 404 0ms"}
+{"TimeStamp": "2026-11-24T19:18:41.8377628+00:00", "Log": ""}
+{"TimeStamp": "2026-11-24T19:18:41.8381276+00:00", "Log": "192.168.0.1 - - [24/Nov/2026 20:18:41] \"\u001b[33mGET / HTTP/1.1\u001b[0m\" 404 -"}

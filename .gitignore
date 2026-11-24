@@ -40,3 +40,10 @@ Archivo.zip
 .vscode/
 *.swp
 *~
+
+# Accidental empty / duplicate downloads (not source of truth)
+....
+system.schema (1).json
+
+# Local working guides (not graded deliverables)
+docs/MEDIC_ASSIGNMENT2_WORKBOOK.md
